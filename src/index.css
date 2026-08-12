@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 font-sans antialiased selection:bg-brand-500 selection:text-white;
+  }
+}
+
+/* Custom Pulsing Radar Marker Animation */
+@keyframes radar-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(25, 118, 210, 0.7);
+  }
+  70% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 14px rgba(25, 118, 210, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(25, 118, 210, 0);
+  }
+}
+
+.bus-pulse-icon {
+  animation: radar-pulse 2s infinite;
+  border-radius: 50%;
+}
+
+/* Leaflet Custom Scrollbars & Popups */
+.leaflet-popup-content-wrapper {
+  border-radius: 16px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+  padding: 4px !important;
+}
+
+.leaflet-container {
+  font-family: inherit !important;
+  width: 100%;
+  height: 100%;
+  border-radius: 1rem;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
