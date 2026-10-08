@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { joinBusRoom, leaveBusRoom, onBusLocationUpdate, offBusLocationUpdate } from '../../services/socket';
 import InteractiveMap from '../../components/InteractiveMap';
 import StatusBadge from '../../components/StatusBadge';
 import RoleBadge from '../../components/RoleBadge';
@@ -37,11 +38,38 @@ import {
 } from 'lucide-react';
 
 const StudentView = () => {
-  const { buses, routes, notices, complaints = [], addComplaint, selectedBus, setSelectedBus, searchQuery, setSearchQuery } = useApp();
+  const { buses, routes, notices, complaints = [], addComplaint, selectedBus, setSelectedBus, searchQuery, setSearchQuery, updateLiveTelemetry } = useApp();
   const { currentUser, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('map'); // 'map' | 'routes' | 'complaints' | 'notices' | 'profile'
   const [timingFilter, setTimingFilter] = useState('all'); // 'all' | 'on_time' | 'in_transit' | 'delayed' | 'completed' | 'cancelled'
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+
+  // Real-time Socket.IO room subscription & telemetry update effect
+  useEffect(() => {
+    const activeBusId = selectedBus?.id || selectedBus?.BusID || buses[0]?.id || buses[0]?.BusID || 1;
+    const busIdInt = parseInt(activeBusId, 10);
+    
+    if (!isNaN(busIdInt)) {
+      joinBusRoom(busIdInt);
+    }
+
+    const handleTelemetryUpdate = (eventData) => {
+      if (eventData && parseInt(eventData.bus_id, 10) === busIdInt) {
+        if (typeof updateLiveTelemetry === 'function') {
+          updateLiveTelemetry(eventData);
+        }
+      }
+    };
+
+    onBusLocationUpdate(handleTelemetryUpdate);
+
+    return () => {
+      offBusLocationUpdate(handleTelemetryUpdate);
+      if (!isNaN(busIdInt)) {
+        leaveBusRoom(busIdInt);
+      }
+    };
+  }, [selectedBus, buses, updateLiveTelemetry]);
   const [raiseComplaintModalOpen, setRaiseComplaintModalOpen] = useState(false);
   const [complaintFilter, setComplaintFilter] = useState('all'); // 'all' | 'Pending' | 'In Progress' | 'Resolved'
   const [complaintSearch, setComplaintSearch] = useState('');
@@ -53,31 +81,31 @@ const StudentView = () => {
     description: ''
   });
 
-  const handleRaiseComplaint = (e) => {
+  const handleRaiseComplaint = async (e) => {
     e.preventDefault();
     if (!complaintForm.title.trim() || !complaintForm.description.trim()) return;
 
-    addComplaint({
+    const res = await addComplaint({
       title: complaintForm.title.trim(),
       category: complaintForm.category,
       busNo: complaintForm.busNo,
       routeName: complaintForm.routeName,
       description: complaintForm.description.trim(),
-      userId: currentUser?.id || 'user_student_1',
-      studentId: currentUser?.studentId || currentUser?.id || 'STU-2026-001',
-      studentName: currentUser?.name || 'Alex Johnson',
-      studentEmail: currentUser?.email || 'student@smartbus.edu',
       status: 'Pending'
     });
 
-    setRaiseComplaintModalOpen(false);
-    setComplaintForm({
-      title: '',
-      category: 'Bus Delay',
-      busNo: 'BUS-101',
-      routeName: 'Udaipur City Station Express (R-01)',
-      description: ''
-    });
+    if (res && res.success !== false) {
+      setRaiseComplaintModalOpen(false);
+      setComplaintForm({
+        title: '',
+        category: 'Bus Delay',
+        busNo: buses[0]?.busNumber || 'BUS-101',
+        routeName: buses[0]?.routeName || 'Campus Express Route',
+        description: ''
+      });
+    } else {
+      alert(res?.error || 'Failed to submit grievance ticket.');
+    }
   };
 
   return (

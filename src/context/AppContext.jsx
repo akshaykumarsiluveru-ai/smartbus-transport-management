@@ -16,6 +16,14 @@ import {
   calculateDistanceKm,
   formatDistance,
 } from '../services/geoEtaService';
+import busApi from '../services/busApi';
+import driverApi from '../services/driverApi';
+import routeApi from '../services/routeApi';
+import noticeApi from '../services/noticeApi';
+import tripApi from '../services/tripApi';
+import trackingApi from '../services/trackingApi';
+import complaintApi from '../services/complaintApi';
+import { getToken } from '../services/tokenStorage';
 
 const AppContext = createContext();
 
@@ -39,6 +47,169 @@ const loadInitial = (key, fallback) => {
     return fallback;
   }
 };
+
+// Data model mappers for Express/MySQL backend APIs
+const mapBusFromDb = (b) => ({
+  id: b.id,
+  BusID: b.id,
+  busNumber: b.bus_number,
+  BusNo: b.bus_number,
+  registrationNumber: b.registration_number,
+  model: b.model || 'Standard Transit Bus',
+  capacity: b.capacity || 50,
+  Capacity: b.capacity || 50,
+  currentOccupancy: b.current_occupancy || 0,
+  fuelType: b.fuel_type || 'Diesel',
+  status: b.status || 'At Depot',
+  currentLat: b.current_lat !== undefined && b.current_lat !== null ? parseFloat(b.current_lat) : 24.5714,
+  Latitude: b.current_lat !== undefined && b.current_lat !== null ? parseFloat(b.current_lat) : 24.5714,
+  currentLng: b.current_lng !== undefined && b.current_lng !== null ? parseFloat(b.current_lng) : 73.6974,
+  Longitude: b.current_lng !== undefined && b.current_lng !== null ? parseFloat(b.current_lng) : 73.6974,
+  speed: b.speed !== undefined && b.speed !== null ? parseFloat(b.speed) : 0,
+  isLive: Boolean(b.is_live),
+  driverId: b.assigned_driver_id || '',
+  driverName: b.driver_name || 'Unassigned',
+  routeId: b.assigned_route_id || '',
+  routeName: b.route_name || 'Unassigned',
+  currentStop: b.current_stop || 'Depot Yard',
+  nextStop: b.next_stop || 'None',
+  etaMinutes: b.eta_minutes || 0,
+  eta: b.eta_minutes || 0,
+  lastUpdated: b.updated_at || new Date().toISOString(),
+  timestamp: b.updated_at || new Date().toISOString(),
+});
+
+const mapDriverFromDb = (d) => ({
+  id: d.id,
+  DriverID: d.id,
+  driverId: d.id,
+  userId: d.user_id,
+  name: d.driver_name || d.name || 'Unnamed Driver',
+  Name: d.driver_name || d.name || 'Unnamed Driver',
+  email: d.driver_email || d.email || '',
+  phone: d.phone || '',
+  Contact: d.phone || '',
+  employeeId: d.employee_id,
+  licenseNumber: d.license_number,
+  status: d.status || 'Available',
+  assignedBusId: d.assigned_bus_id || '',
+  assignedBusNumber: d.bus_number || 'Unassigned',
+  assignedRouteId: d.assigned_route_id || '',
+  assignedRouteName: d.route_name || 'None',
+  shift: d.shift || 'Morning',
+  rating: d.rating ? `${d.rating} ⭐` : '5.0 ⭐',
+  tripsToday: d.trips_today || 0,
+});
+
+const mapStopFromDb = (s) => ({
+  id: s.id,
+  StopID: s.id,
+  stopId: s.id,
+  name: s.stop_name || s.name,
+  StopName: s.stop_name || s.name,
+  stopName: s.stop_name || s.name,
+  sequenceOrder: s.stop_order || s.sequence_order || 1,
+  Sequence: s.stop_order || s.sequence_order || 1,
+  sequence: s.stop_order || s.sequence_order || 1,
+  lat: parseFloat(s.latitude || s.lat || 24.5850),
+  Latitude: parseFloat(s.latitude || s.lat || 24.5850),
+  latitude: parseFloat(s.latitude || s.lat || 24.5850),
+  lng: parseFloat(s.longitude || s.lng || 73.6900),
+  Longitude: parseFloat(s.longitude || s.lng || 73.6900),
+  longitude: parseFloat(s.longitude || s.lng || 73.6900),
+  estimatedTime: s.scheduled_arrival || s.estimatedTime || '08:30 AM',
+  ExpectedArrivalTime: s.scheduled_arrival || s.estimatedTime || '08:30 AM',
+  expectedArrivalTime: s.scheduled_arrival || s.estimatedTime || '08:30 AM',
+});
+
+const mapRouteFromDb = (r, stops = []) => {
+  const mappedStops = stops.map(mapStopFromDb);
+  const startPt = r.start_point || (mappedStops.length > 0 ? mappedStops[0].name : 'Start Station');
+  const endPt = r.end_point || (mappedStops.length > 0 ? mappedStops[mappedStops.length - 1].name : 'Terminal Station');
+  return {
+    id: r.id,
+    RouteID: r.id,
+    routeId: r.id,
+    routeCode: r.route_code,
+    routeName: r.name || r.route_name,
+    RouteName: r.name || r.route_name,
+    startPoint: startPt,
+    StartPoint: startPt,
+    endPoint: endPt,
+    EndPoint: endPt,
+    destination: endPt,
+    totalDistance: r.distance_km ? `${r.distance_km} km` : '10 km',
+    distance: r.distance_km ? `${r.distance_km} km` : '10 km',
+    Distance: r.distance_km ? `${r.distance_km} km` : '10 km',
+    estimatedDuration: r.estimated_duration ? `${r.estimated_duration}` : '25 mins',
+    EstimatedDuration: r.estimated_duration ? `${r.estimated_duration}` : '25 mins',
+    status: r.status || 'Active',
+    schedules: r.schedules || ['08:00 AM', '01:00 PM', '05:00 PM'],
+    stops: mappedStops,
+    Stops: mappedStops,
+  };
+};
+
+const mapNoticeFromDb = (n) => ({
+  id: n.id,
+  title: n.title,
+  message: n.message,
+  type: n.type || 'General Announcement',
+  target: n.target || 'All Students',
+  author: n.creator_name || 'Transport Control',
+  authorRole: 'Transit Dispatch',
+  timestamp: n.created_at ? new Date(n.created_at).toLocaleString() : 'Just Now',
+  createdAt: n.created_at,
+});
+
+const mapTripFromDb = (t) => ({
+  id: t.id,
+  tripId: t.id,
+  tripCode: t.trip_code,
+  busId: t.bus_id,
+  BusID: t.bus_id,
+  busNumber: t.bus_number || `BUS-${t.bus_id}`,
+  driverId: t.driver_id,
+  DriverID: t.driver_id,
+  driverName: t.driver_name || 'Driver',
+  routeId: t.route_id,
+  RouteID: t.route_id,
+  routeCode: t.route_code,
+  routeName: t.route_name || 'Assigned Route',
+  startTime: t.start_time,
+  departureTime: t.start_time,
+  endTime: t.end_time,
+  status: t.status || 'In Transit',
+  passengerCount: t.passenger_count || 0,
+  passengers: t.passenger_count || 0,
+  currentStop: t.current_stop || 'Depot',
+  nextStop: t.next_stop || 'None',
+  createdAt: t.created_at,
+});
+
+const mapComplaintFromDb = (c) => ({
+  id: c.id,
+  complaintId: `CMP-${c.id}`,
+  userId: c.user_id,
+  busId: c.bus_id,
+  busNo: c.bus_number || (c.bus_id ? `BUS-${c.bus_id}` : 'General'),
+  busNumber: c.bus_number || (c.bus_id ? `BUS-${c.bus_id}` : 'General'),
+  routeId: c.route_id,
+  routeName: c.route_name || (c.route_code ? `Route ${c.route_code}` : 'Campus Corridor'),
+  title: c.subject,
+  subject: c.subject,
+  category: c.category || 'General',
+  description: c.description,
+  status: c.status || 'Pending',
+  priority: c.priority || 'Medium',
+  adminResponse: c.admin_response,
+  adminRemark: c.admin_response,
+  studentId: c.student_id || `STU-${c.user_id}`,
+  studentName: c.student_name || 'Student User',
+  studentEmail: c.student_email || '',
+  date: c.created_at ? new Date(c.created_at).toLocaleDateString() : 'Today',
+  createdAt: c.created_at,
+});
 
 export const AppProvider = ({ children }) => {
   // 1. USERS Entity State
@@ -66,6 +237,97 @@ export const AppProvider = ({ children }) => {
   const [notices, setNotices] = useState(() => loadInitial(STORAGE_KEYS.NOTICES, INITIAL_NOTICES));
   const [activityLogs, setActivityLogs] = useState(INITIAL_ACTIVITY_LOGS);
   const [maintenanceLogs, setMaintenanceLogs] = useState(INITIAL_MAINTENANCE_LOGS);
+
+  const [isDataLoading, setIsDataLoading] = useState(false);
+  const [dataLoadError, setDataLoadError] = useState(null);
+
+  // Synchronize backend data from MySQL REST APIs
+  const refreshAdminData = useCallback(async () => {
+    const token = getToken();
+    if (!token) return;
+
+    setIsDataLoading(true);
+    setDataLoadError(null);
+    try {
+      const [busesRes, driversRes, routesRes, noticesRes, tripsRes, complaintsRes, trackingRes] = await Promise.all([
+        busApi.getBuses().catch((e) => ({ success: false, error: e })),
+        driverApi.getDrivers().catch((e) => ({ success: false, error: e })),
+        routeApi.getRoutes().catch((e) => ({ success: false, error: e })),
+        noticeApi.getNotices().catch((e) => ({ success: false, error: e })),
+        tripApi.getTrips().catch((e) => ({ success: false, error: e })),
+        complaintApi.getComplaints().catch((e) => ({ success: false, error: e })),
+        trackingApi.getLiveTracking().catch((e) => ({ success: false, error: e })),
+      ]);
+
+      if (busesRes.success && Array.isArray(busesRes.data)) {
+        setBuses(busesRes.data.map(mapBusFromDb));
+      }
+      if (driversRes.success && Array.isArray(driversRes.data)) {
+        setDrivers(driversRes.data.map(mapDriverFromDb));
+      }
+      if (noticesRes.success && Array.isArray(noticesRes.data)) {
+        setNotices(noticesRes.data.map(mapNoticeFromDb));
+      }
+      if (tripsRes.success && Array.isArray(tripsRes.data)) {
+        setTrips(tripsRes.data.map(mapTripFromDb));
+      }
+      if (complaintsRes.success && Array.isArray(complaintsRes.data)) {
+        setComplaints(complaintsRes.data.map(mapComplaintFromDb));
+      }
+      if (trackingRes.success && Array.isArray(trackingRes.data)) {
+        setTracking((prev) => {
+          const nextTrack = { ...prev };
+          trackingRes.data.forEach((tr) => {
+            const busKey = tr.bus_id;
+            nextTrack[busKey] = {
+              BusID: busKey,
+              busId: busKey,
+              busNumber: tr.bus_number,
+              driverId: tr.driver_id,
+              driverName: tr.driver_name,
+              routeId: tr.route_id,
+              routeName: tr.route_name,
+              Latitude: parseFloat(tr.latitude),
+              currentLat: parseFloat(tr.latitude),
+              Longitude: parseFloat(tr.longitude),
+              currentLng: parseFloat(tr.longitude),
+              speed: parseFloat(tr.speed || 0),
+              currentStop: tr.current_stop || 'In Transit',
+              nextStop: tr.next_stop || 'Next Stop',
+              etaMinutes: tr.eta_minutes || 0,
+              isLive: Boolean(tr.is_live),
+              timestamp: tr.timestamp,
+            };
+          });
+          return nextTrack;
+        });
+      }
+
+      if (routesRes.success && Array.isArray(routesRes.data)) {
+        const routesWithStops = await Promise.all(
+          routesRes.data.map(async (r) => {
+            try {
+              const stopsRes = await routeApi.getRouteStops(r.id);
+              const stops = stopsRes.success && Array.isArray(stopsRes.data) ? stopsRes.data : [];
+              return mapRouteFromDb(r, stops);
+            } catch (e) {
+              return mapRouteFromDb(r, []);
+            }
+          })
+        );
+        setRoutes(routesWithStops);
+      }
+    } catch (err) {
+      console.error('Error loading admin data from backend API:', err);
+      setDataLoadError(err.message || 'Failed to load fleet data from server.');
+    } finally {
+      setIsDataLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshAdminData();
+  }, [refreshAdminData]);
 
   const [selectedBusId, setSelectedBusId] = useState('bus_101');
   const [searchQuery, setSearchQuery] = useState('');
@@ -338,6 +600,19 @@ export const AppProvider = ({ children }) => {
             updatedBuses.forEach((b) => {
               const busKey = b.id || b.BusID;
               if (b.isLive && (b.status === 'In Transit' || b.status === 'Delayed')) {
+                const busIdInt = parseInt(b.id || b.BusID, 10);
+                if (!isNaN(busIdInt)) {
+                  trackingApi.updateTracking({
+                    bus_id: busIdInt,
+                    latitude: b.currentLat,
+                    longitude: b.currentLng,
+                    speed: b.speed || 0,
+                    current_stop: b.currentStop || null,
+                    next_stop: b.nextStop || null,
+                    eta_minutes: b.etaMinutes || 0,
+                  }).catch(() => {});
+                }
+
                 nextTrack[busKey] = {
                   BusID: busKey,
                   busId: busKey,
@@ -973,596 +1248,244 @@ export const AppProvider = ({ children }) => {
   }, [buses, broadcastEvent]);
 
   /**
-   * 5. BUS CRUD & UPDATE (Shared Context)
+   * 5. BUS CRUD & UPDATE (Shared Context with REST API Integration)
    */
-  const addBus = useCallback((newBus) => {
-    const normalizedBus = {
-      BusID: newBus.id || newBus.BusID || `bus_${Date.now()}`,
-      id: newBus.id || newBus.BusID || `bus_${Date.now()}`,
-      BusNo: newBus.busNumber || newBus.BusNo || 'BUS-999',
-      busNumber: newBus.busNumber || newBus.BusNo || 'BUS-999',
-      Capacity: parseInt(newBus.capacity || newBus.Capacity) || 50,
-      capacity: parseInt(newBus.capacity || newBus.Capacity) || 50,
-      registrationNumber: newBus.registrationNumber || 'RJ-27-PA-0000',
-      model: newBus.model || 'Standard Transit Bus',
-      fuelType: newBus.fuelType || 'Diesel',
-      driverId: newBus.driverId || '',
-      driverName: newBus.driverName || 'Unassigned',
-      routeId: newBus.routeId || '',
-      routeName: newBus.routeName || 'Unassigned',
-      status: newBus.status || 'At Depot',
-      isLive: newBus.status === 'In Transit',
-      currentOccupancy: 0,
-      speed: 0,
-      currentLat: 24.5714,
-      Latitude: 24.5714,
-      currentLng: 73.6974,
-      Longitude: 73.6974,
-      currentStop: 'Depot Yard',
-      nextStop: 'None',
-      etaMinutes: 0,
-      eta: 0,
-      lastUpdated: new Date().toISOString(),
-      timestamp: new Date().toISOString(),
-    };
+  const addBus = useCallback(async (newBus) => {
+    try {
+      const payload = {
+        bus_number: newBus.busNumber || newBus.BusNo,
+        registration_number: newBus.registrationNumber,
+        model: newBus.model || 'Standard Transit Bus',
+        capacity: parseInt(newBus.capacity || newBus.Capacity) || 50,
+        current_occupancy: 0,
+        fuel_type: newBus.fuelType || 'Diesel',
+        status: newBus.status || 'At Depot',
+      };
+      const res = await busApi.createBus(payload);
+      await refreshAdminData();
+      logActivity('Bus Added', `Added ${payload.bus_number} to fleet`, 'Bus');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error creating bus:', err);
+      return { success: false, error: err.message || 'Failed to create bus.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
-    setBuses((prev) => {
-      const next = [...prev, normalizedBus];
-      broadcastEvent('BUS_STATE_SYNC', { buses: next });
-      return next;
-    });
+  const updateBus = useCallback(async (busId, updatedFields) => {
+    try {
+      const payload = {};
+      if (updatedFields.busNumber || updatedFields.BusNo) payload.bus_number = updatedFields.busNumber || updatedFields.BusNo;
+      if (updatedFields.registrationNumber) payload.registration_number = updatedFields.registrationNumber;
+      if (updatedFields.model) payload.model = updatedFields.model;
+      if (updatedFields.capacity || updatedFields.Capacity) payload.capacity = parseInt(updatedFields.capacity || updatedFields.Capacity);
+      if (updatedFields.fuelType) payload.fuel_type = updatedFields.fuelType;
+      if (updatedFields.status) payload.status = updatedFields.status;
 
-    logActivity('Bus Added', `Added ${normalizedBus.BusNo} to fleet`, 'Bus');
-  }, [logActivity, broadcastEvent]);
+      const res = await busApi.updateBus(busId, payload);
+      await refreshAdminData();
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error updating bus:', err);
+      return { success: false, error: err.message || 'Failed to update bus.' };
+    }
+  }, [refreshAdminData]);
 
-  const updateBus = useCallback((busId, updatedFields) => {
-    setBuses((prev) => {
-      const next = prev.map((b) => {
-        if (b.id === busId || b.BusID === busId) {
-          const joined = { ...b, ...updatedFields };
-          // Keep uppercase and lowercase aliases in sync
-          if (updatedFields.currentLat !== undefined) joined.Latitude = updatedFields.currentLat;
-          if (updatedFields.currentLng !== undefined) joined.Longitude = updatedFields.currentLng;
-          if (updatedFields.Latitude !== undefined) joined.currentLat = updatedFields.Latitude;
-          if (updatedFields.Longitude !== undefined) joined.currentLng = updatedFields.Longitude;
-          if (updatedFields.busNumber !== undefined) joined.BusNo = updatedFields.busNumber;
-          if (updatedFields.BusNo !== undefined) joined.busNumber = updatedFields.BusNo;
-          if (updatedFields.capacity !== undefined) joined.Capacity = updatedFields.capacity;
-          if (updatedFields.Capacity !== undefined) joined.capacity = updatedFields.Capacity;
-          return joined;
-        }
-        return b;
+  const deleteBus = useCallback(async (busId) => {
+    try {
+      const res = await busApi.deleteBus(busId);
+      await refreshAdminData();
+      logActivity('Bus Deleted', `Deleted bus ID ${busId}`, 'Bus');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error deleting bus:', err);
+      return { success: false, error: err.message || 'Failed to delete bus.' };
+    }
+  }, [refreshAdminData, logActivity]);
+
+  /**
+   * 6. DRIVER CRUD & ASSIGNMENT (Shared Context with REST API Integration)
+   */
+  const addDriver = useCallback(async (newDriver) => {
+    try {
+      const payload = {
+        name: newDriver.name || newDriver.Name,
+        email: newDriver.email || `${(newDriver.name || 'driver').toLowerCase().replace(/\s+/g, '')}@smartbus.edu`,
+        phone: newDriver.phone || newDriver.Contact,
+        employee_id: newDriver.employeeId || newDriver.driverId || newDriver.DriverID || `EMP-${Date.now()}`,
+        license_number: newDriver.licenseNumber || `LIC-${Date.now()}`,
+        status: newDriver.status || 'Available',
+        shift: newDriver.shift || 'Morning',
+        assigned_bus_id: newDriver.assignedBusId ? parseInt(newDriver.assignedBusId) : null,
+        assigned_route_id: newDriver.assignedRouteId ? parseInt(newDriver.assignedRouteId) : null,
+      };
+      const res = await driverApi.createDriver(payload);
+      await refreshAdminData();
+      logActivity('Driver Added', `Registered driver ${payload.name}`, 'Driver');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error creating driver:', err);
+      return { success: false, error: err.message || 'Failed to create driver.' };
+    }
+  }, [refreshAdminData, logActivity]);
+
+  const updateDriver = useCallback(async (driverId, updatedFields) => {
+    try {
+      const payload = {};
+      if (updatedFields.name || updatedFields.Name) payload.name = updatedFields.name || updatedFields.Name;
+      if (updatedFields.email) payload.email = updatedFields.email;
+      if (updatedFields.phone || updatedFields.Contact) payload.phone = updatedFields.phone || updatedFields.Contact;
+      if (updatedFields.licenseNumber) payload.license_number = updatedFields.licenseNumber;
+      if (updatedFields.status) payload.status = updatedFields.status;
+      if (updatedFields.shift) payload.shift = updatedFields.shift;
+      if (updatedFields.assignedBusId !== undefined) payload.assigned_bus_id = updatedFields.assignedBusId ? parseInt(updatedFields.assignedBusId) : null;
+      if (updatedFields.assignedRouteId !== undefined) payload.assigned_route_id = updatedFields.assignedRouteId ? parseInt(updatedFields.assignedRouteId) : null;
+
+      const res = await driverApi.updateDriver(driverId, payload);
+      await refreshAdminData();
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error updating driver:', err);
+      return { success: false, error: err.message || 'Failed to update driver.' };
+    }
+  }, [refreshAdminData]);
+
+  const deleteDriver = useCallback(async (driverId) => {
+    try {
+      const res = await driverApi.deleteDriver(driverId);
+      await refreshAdminData();
+      logActivity('Driver Deleted', `Removed driver ID ${driverId}`, 'Driver');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error deleting driver:', err);
+      return { success: false, error: err.message || 'Failed to delete driver.' };
+    }
+  }, [refreshAdminData, logActivity]);
+
+  /**
+   * CENTRAL ASSIGNMENT SYSTEM (BUS + DRIVER + ROUTE)
+   */
+  const assignDriverToBus = useCallback(async (busId, driverId, routeId, shift = 'Morning') => {
+    try {
+      const payload = {
+        assigned_bus_id: busId ? parseInt(busId) : null,
+        assigned_route_id: routeId ? parseInt(routeId) : null,
+        shift: shift || 'Morning',
+      };
+      const res = await driverApi.assignDriver(driverId, payload);
+      await refreshAdminData();
+      logActivity('Assignment Created', `Assigned bus ${busId} ➔ driver ${driverId}`, 'Assignment');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error assigning driver:', err);
+      return { success: false, error: err.message || 'Failed to assign driver.' };
+    }
+  }, [refreshAdminData, logActivity]);
+
+  const changeAssignedDriver = useCallback(async (busId, newDriverId) => {
+    try {
+      const bus = buses.find((b) => b.id === busId || b.BusID === busId || b.id === parseInt(busId));
+      const newDriver = drivers.find((d) => d.id === newDriverId || d.DriverID === newDriverId || d.id === parseInt(newDriverId));
+
+      if (!bus || !newDriver) return { success: false, error: 'Bus or Driver not found.' };
+
+      const oldDriverId = bus.driverId;
+      if (oldDriverId && oldDriverId !== newDriver.id) {
+        await driverApi.assignDriver(oldDriverId, { assigned_bus_id: null, assigned_route_id: null });
+      }
+
+      const res = await driverApi.assignDriver(newDriver.id, {
+        assigned_bus_id: parseInt(bus.id),
+        assigned_route_id: bus.routeId ? parseInt(bus.routeId) : null,
+        shift: bus.shift || 'Morning',
       });
-      broadcastEvent('BUS_STATE_SYNC', { buses: next });
-      return next;
-    });
-
-    // Also update Tracking entity
-    setTracking((prev) => {
-      const existing = prev[busId] || {};
-      const updatedTrack = {
-        ...existing,
-        BusID: busId,
-        busId: busId,
-        ...updatedFields,
-        lastUpdated: new Date().toISOString(),
-        timestamp: new Date().toISOString(),
-      };
-      return { ...prev, [busId]: updatedTrack };
-    });
-  }, [broadcastEvent]);
-
-  const deleteBus = useCallback((busId) => {
-    setBuses((prev) => {
-      const next = prev.filter((b) => b.id !== busId && b.BusID !== busId);
-      broadcastEvent('BUS_STATE_SYNC', { buses: next });
-      return next;
-    });
-
-    setDrivers((prev) =>
-      prev.map((d) => (d.assignedBusId === busId ? { ...d, assignedBusId: '', assignedBusNumber: 'Unassigned', status: 'Available' } : d))
-    );
-
-    setTracking((prev) => {
-      const next = { ...prev };
-      delete next[busId];
-      return next;
-    });
-
-    logActivity('Bus Deleted', `Deleted bus ID ${busId}`, 'Bus');
-  }, [logActivity, broadcastEvent]);
-
-  /**
-   * 6. DRIVER CRUD & ASSIGNMENT (Shared Context)
-   */
-  const addDriver = useCallback((newDriver) => {
-    const normalized = {
-      DriverID: newDriver.driverId || newDriver.DriverID || `drv_${Date.now()}`,
-      id: newDriver.id || newDriver.DriverID || `drv_${Date.now()}`,
-      Name: newDriver.name || newDriver.Name || 'Unnamed Driver',
-      name: newDriver.name || newDriver.Name || 'Unnamed Driver',
-      Contact: newDriver.phone || newDriver.Contact || '+91 90000 00000',
-      phone: newDriver.phone || newDriver.Contact || '+91 90000 00000',
-      Role: 'driver',
-      role: 'driver',
-      assignedBusId: '',
-      assignedBusNumber: 'Unassigned',
-      assignedRouteId: '',
-      assignedRouteName: 'None',
-      shift: newDriver.shift || 'Morning',
-      status: 'Available',
-      tripsToday: 0,
-      rating: '5.0 ⭐',
-      licenseNumber: newDriver.licenseNumber || 'RJ-27-2026-0000',
-    };
-
-    setDrivers((prev) => {
-      const next = [...prev, normalized];
-      broadcastEvent('BUS_STATE_SYNC', { drivers: next });
-      return next;
-    });
-
-    logActivity('Driver Added', `Registered driver ${normalized.Name}`, 'Driver');
-  }, [logActivity, broadcastEvent]);
-
-  const updateDriver = useCallback((driverId, updatedFields) => {
-    setDrivers((prev) => {
-      const next = prev.map((d) => (d.id === driverId || d.DriverID === driverId ? { ...d, ...updatedFields } : d));
-      broadcastEvent('BUS_STATE_SYNC', { drivers: next });
-      return next;
-    });
-
-    // If driver's name or status changed, sync to assigned bus
-    if (updatedFields.name || updatedFields.Name || updatedFields.status) {
-      setBuses((prev) =>
-        prev.map((b) => {
-          if (b.driverId === driverId) {
-            const updated = { ...b };
-            if (updatedFields.name || updatedFields.Name) {
-              updated.driverName = updatedFields.name || updatedFields.Name;
-            }
-            if (updatedFields.status === 'Off Duty' || updatedFields.status === 'On Leave') {
-              if (b.status === 'In Transit') {
-                updated.status = 'At Depot';
-                updated.isLive = false;
-                updated.speed = 0;
-              }
-            }
-            return updated;
-          }
-          return b;
-        })
-      );
+      await refreshAdminData();
+      logActivity('Driver Changed', `Changed driver on ${bus.busNumber || bus.BusNo} to ${newDriver.name || newDriver.Name}`, 'Assignment');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error changing assigned driver:', err);
+      return { success: false, error: err.message || 'Failed to change assigned driver.' };
     }
-  }, [broadcastEvent]);
+  }, [buses, drivers, refreshAdminData, logActivity]);
 
-  const deleteDriver = useCallback((driverId) => {
-    setDrivers((prev) => {
-      const next = prev.filter((d) => d.id !== driverId && d.DriverID !== driverId);
-      broadcastEvent('BUS_STATE_SYNC', { drivers: next });
-      return next;
-    });
+  const changeAssignedRoute = useCallback(async (busId, newRouteId) => {
+    try {
+      const bus = buses.find((b) => b.id === busId || b.BusID === busId || b.id === parseInt(busId));
+      const route = routes.find((r) => r.id === newRouteId || r.RouteID === newRouteId || r.id === parseInt(newRouteId));
 
-    // Unassign any bus linked to this driver
-    setBuses((prev) =>
-      prev.map((b) =>
-        b.driverId === driverId
-          ? { ...b, driverId: '', driverName: 'Unassigned', status: b.status === 'In Transit' ? 'At Depot' : b.status, isLive: false, speed: 0 }
-          : b
-      )
-    );
+      if (!bus || !route) return { success: false, error: 'Bus or Route not found.' };
 
-    logActivity('Driver Deleted', `Removed driver ID ${driverId}`, 'Driver');
-  }, [logActivity, broadcastEvent]);
-
-  /**
-   * 6. CENTRAL ASSIGNMENT SYSTEM (BUS + DRIVER + ROUTE)
-   */
-  const assignDriverToBus = useCallback((busId, driverId, routeId, shift = 'Morning') => {
-    const bus = buses.find((b) => b.id === busId || b.BusID === busId);
-    const driver = drivers.find((d) => d.id === driverId || d.DriverID === driverId);
-    const route = routes.find((r) => r.id === routeId || r.RouteID === routeId);
-
-    if (!bus) return { success: false, error: 'Target bus was not found in fleet catalog.' };
-    if (!driver) return { success: false, error: 'Target driver was not found in staff records.' };
-    if (!route) return { success: false, error: 'Target route corridor was not found.' };
-
-    const busCleanId = bus.id || bus.BusID;
-    const busCleanNumber = bus.busNumber || bus.BusNo;
-    const driverCleanId = driver.id || driver.DriverID;
-    const driverCleanName = driver.name || driver.Name;
-    const routeCleanId = route.id || route.RouteID;
-    const routeCleanName = route.routeName;
-
-    // VALIDATION RULE 3: Maintenance buses cannot be assigned
-    if (bus.status === 'Maintenance' || bus.status === 'Out of Service') {
-      return {
-        success: false,
-        error: `Bus ${busCleanNumber} is currently under Maintenance (${bus.maintenanceReason || 'Work in Progress'}) and cannot be assigned.`
-      };
-    }
-
-    // VALIDATION RULE 4: Driver must be Available before assignment
-    // (Allowed if driver is already assigned to this exact bus and we are updating shift/route)
-    if (driver.status !== 'Available' && driver.assignedBusId !== busCleanId) {
-      return {
-        success: false,
-        error: `Driver ${driverCleanName} is currently "${driver.status}". Driver must be "Available" before assignment.`
-      };
-    }
-
-    // VALIDATION RULE 1: Driver cannot be assigned to multiple active buses
-    if (driver.assignedBusId && driver.assignedBusId !== busCleanId && (driver.status === 'On Trip' || driver.status === 'Assigned')) {
-      return {
-        success: false,
-        error: `Driver ${driverCleanName} is already assigned to active bus ${driver.assignedBusNumber}. A driver cannot be assigned to multiple active buses.`
-      };
-    }
-
-    // VALIDATION RULE 2: Bus cannot have multiple active drivers
-    if (bus.driverId && bus.driverId !== driverCleanId && bus.driverName !== 'Unassigned' && (bus.status === 'In Transit' || bus.status === 'Delayed')) {
-      return {
-        success: false,
-        error: `Bus ${busCleanNumber} is already in transit with driver ${bus.driverName}. Unassign or complete the trip before reassigning.`
-      };
-    }
-
-    // If bus had a different previous driver, free that driver to Available
-    if (bus.driverId && bus.driverId !== driverCleanId) {
-      setDrivers((prev) =>
-        prev.map((d) =>
-          d.id === bus.driverId || d.DriverID === bus.driverId
-            ? { ...d, assignedBusId: '', assignedBusNumber: 'Unassigned', assignedRouteId: '', assignedRouteName: 'None', status: 'Available' }
-            : d
-        )
-      );
-    }
-
-    // 1. Update Bus
-    setBuses((prev) =>
-      prev.map((b) =>
-        b.id === busCleanId || b.BusID === busCleanId
-          ? {
-              ...b,
-              driverId: driverCleanId,
-              driverName: driverCleanName,
-              routeId: routeCleanId,
-              routeName: routeCleanName,
-              shift,
-              status: 'In Transit',
-              isLive: true,
-              speed: 30.0,
-            }
-          : b
-      )
-    );
-
-    // 2. Update Driver
-    setDrivers((prev) =>
-      prev.map((d) =>
-        d.id === driverCleanId || d.DriverID === driverCleanId
-          ? {
-              ...d,
-              assignedBusId: busCleanId,
-              assignedBusNumber: busCleanNumber,
-              assignedRouteId: routeCleanId,
-              assignedRouteName: routeCleanName,
-              shift,
-              status: 'On Trip',
-              tripsToday: (d.tripsToday || 0) + 1,
-            }
-          : d
-      )
-    );
-
-    // 3. Update Tracking
-    setTracking((prev) => ({
-      ...prev,
-      [busCleanId]: {
-        ...(prev[busCleanId] || {}),
-        BusID: busCleanId,
-        busId: busCleanId,
-        Latitude: route.stops?.[0]?.lat || route.stops?.[0]?.Latitude || 24.5714,
-        currentLat: route.stops?.[0]?.lat || route.stops?.[0]?.Latitude || 24.5714,
-        Longitude: route.stops?.[0]?.lng || route.stops?.[0]?.Longitude || 73.6974,
-        currentLng: route.stops?.[0]?.lng || route.stops?.[0]?.Longitude || 73.6974,
-        speed: 30.0,
-        isLive: true,
-        status: 'In Transit',
-        currentStop: route.stops?.[0]?.name || route.stops?.[0]?.StopName || 'Start Terminal',
-        nextStop: route.stops?.[1]?.name || route.stops?.[1]?.StopName || 'Next Stop',
-        eta: 6,
-        etaMinutes: 6,
-        timestamp: new Date().toISOString(),
-        lastUpdated: new Date().toISOString(),
+      if (bus.driverId) {
+        await driverApi.assignDriver(bus.driverId, {
+          assigned_bus_id: parseInt(bus.id),
+          assigned_route_id: parseInt(route.id),
+          shift: bus.shift || 'Morning',
+        });
       }
-    }));
-
-    // 4. Create Active Trip
-    const newTripId = `TRP-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newTrip = {
-      id: newTripId,
-      tripId: newTripId,
-      busId: busCleanId,
-      BusID: busCleanId,
-      busNumber: busCleanNumber,
-      driverId: driverCleanId,
-      DriverID: driverCleanId,
-      driverName: driverCleanName,
-      routeId: routeCleanId,
-      RouteID: routeCleanId,
-      routeName: routeCleanName,
-      startTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      endTime: null,
-      status: 'In Transit',
-      passengers: Math.floor(15 + Math.random() * 20),
-      currentStop: route.stops?.[0]?.name || route.stops?.[0]?.StopName || 'Start Terminal',
-      nextStop: route.stops?.[1]?.name || route.stops?.[1]?.StopName || 'Next Stop',
-      eta: '6 mins',
-      date: new Date().toISOString().split('T')[0],
-    };
-
-    setTrips((prev) => [newTrip, ...prev]);
-    logActivity('Assignment Created', `Assigned ${busCleanNumber} ➔ ${driverCleanName} ➔ ${routeCleanName} (${shift})`, 'Assignment');
-    broadcastEvent('BUS_STATE_SYNC', { busId: busCleanId, driverId: driverCleanId, routeId: routeCleanId });
-    return { success: true };
-  }, [buses, drivers, routes, logActivity, broadcastEvent]);
-
-  const changeAssignedDriver = useCallback((busId, newDriverId) => {
-    const bus = buses.find((b) => b.id === busId || b.BusID === busId);
-    const newDriver = drivers.find((d) => d.id === newDriverId || d.DriverID === newDriverId);
-
-    if (!bus || !newDriver) return { success: false, error: 'Bus or Driver not found.' };
-
-    const busCleanId = bus.id || bus.BusID;
-    const newDriverCleanId = newDriver.id || newDriver.DriverID;
-    const newDriverName = newDriver.name || newDriver.Name;
-
-    // Check new driver availability
-    if (newDriver.status !== 'Available' && newDriver.assignedBusId !== busCleanId) {
-      return { success: false, error: `Driver ${newDriverName} is currently ${newDriver.status}. Only "Available" drivers can be assigned.` };
+      await refreshAdminData();
+      logActivity('Route Changed', `Changed route on ${bus.busNumber || bus.BusNo} to ${route.routeName}`, 'Assignment');
+      return { success: true };
+    } catch (err) {
+      console.error('Error changing assigned route:', err);
+      return { success: false, error: err.message || 'Failed to change assigned route.' };
     }
+  }, [buses, routes, refreshAdminData, logActivity]);
 
-    const oldDriverId = bus.driverId;
+  const unassignDriver = useCallback(async (driverId) => {
+    try {
+      const driver = drivers.find((d) => d.id === driverId || d.DriverID === driverId || d.id === parseInt(driverId));
+      if (!driver) return { success: false, error: 'Driver not found.' };
 
-    // 1. Free old driver
-    if (oldDriverId && oldDriverId !== newDriverCleanId) {
-      setDrivers((prev) =>
-        prev.map((d) =>
-          d.id === oldDriverId || d.DriverID === oldDriverId
-            ? { ...d, assignedBusId: '', assignedBusNumber: 'Unassigned', assignedRouteId: '', assignedRouteName: 'None', status: 'Available' }
-            : d
-        )
-      );
+      const res = await driverApi.assignDriver(driver.id, {
+        assigned_bus_id: null,
+        assigned_route_id: null,
+      });
+      await refreshAdminData();
+      logActivity('Driver Unassigned', `Unassigned driver ${driver.name || driver.Name}`, 'Assignment');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error unassigning driver:', err);
+      return { success: false, error: err.message || 'Failed to unassign driver.' };
     }
+  }, [drivers, refreshAdminData, logActivity]);
 
-    // 2. Assign new driver
-    setDrivers((prev) =>
-      prev.map((d) =>
-        d.id === newDriverCleanId || d.DriverID === newDriverCleanId
-          ? {
-              ...d,
-              assignedBusId: busCleanId,
-              assignedBusNumber: bus.busNumber || bus.BusNo,
-              assignedRouteId: bus.routeId,
-              assignedRouteName: bus.routeName,
-              status: bus.status === 'In Transit' ? 'On Trip' : 'Available',
-            }
-          : d
-      )
-    );
+  const assignRouteToDriver = useCallback(async (driverId, routeId) => {
+    try {
+      const driver = drivers.find((d) => d.id === driverId || d.DriverID === driverId || d.id === parseInt(driverId));
+      const route = routes.find((r) => r.id === routeId || r.RouteID === routeId || r.id === parseInt(routeId));
 
-    // 3. Update Bus
-    setBuses((prev) =>
-      prev.map((b) =>
-        b.id === busCleanId || b.BusID === busCleanId
-          ? { ...b, driverId: newDriverCleanId, driverName: newDriverName }
-          : b
-      )
-    );
+      if (!driver || !route) return { success: false, error: 'Driver or Route not found.' };
 
-    logActivity('Driver Changed', `Changed driver on ${bus.busNumber || bus.BusNo} to ${newDriverName}`, 'Assignment');
-    broadcastEvent('BUS_STATE_SYNC', { busId: busCleanId, driverId: newDriverCleanId });
-    return { success: true };
-  }, [buses, drivers, logActivity, broadcastEvent]);
-
-  const changeAssignedRoute = useCallback((busId, newRouteId) => {
-    const bus = buses.find((b) => b.id === busId || b.BusID === busId);
-    const route = routes.find((r) => r.id === newRouteId || r.RouteID === newRouteId);
-
-    if (!bus || !route) return { success: false, error: 'Bus or Route not found.' };
-
-    const busCleanId = bus.id || bus.BusID;
-    const routeCleanId = route.id || route.RouteID;
-    const routeCleanName = route.routeName;
-
-    // 1. Update Bus
-    setBuses((prev) =>
-      prev.map((b) =>
-        b.id === busCleanId || b.BusID === busCleanId
-          ? { ...b, routeId: routeCleanId, routeName: routeCleanName }
-          : b
-      )
-    );
-
-    // 2. Update Driver if assigned
-    if (bus.driverId) {
-      setDrivers((prev) =>
-        prev.map((d) =>
-          d.id === bus.driverId || d.DriverID === bus.driverId
-            ? { ...d, assignedRouteId: routeCleanId, assignedRouteName: routeCleanName }
-            : d
-        )
-      );
+      const res = await driverApi.assignDriver(driver.id, {
+        assigned_bus_id: driver.assignedBusId ? parseInt(driver.assignedBusId) : null,
+        assigned_route_id: parseInt(route.id),
+        shift: driver.shift || 'Morning',
+      });
+      await refreshAdminData();
+      logActivity('Route Assigned to Driver', `Assigned ${driver.name || driver.Name} to ${route.routeName}`, 'Assignment');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error assigning route to driver:', err);
+      return { success: false, error: err.message || 'Failed to assign route to driver.' };
     }
+  }, [drivers, routes, refreshAdminData, logActivity]);
 
-    // 3. Update Tracking Beacon
-    setTracking((prev) => ({
-      ...prev,
-      [busCleanId]: {
-        ...(prev[busCleanId] || {}),
-        Latitude: route.stops?.[0]?.lat || route.stops?.[0]?.Latitude || 24.5714,
-        currentLat: route.stops?.[0]?.lat || route.stops?.[0]?.Latitude || 24.5714,
-        Longitude: route.stops?.[0]?.lng || route.stops?.[0]?.Longitude || 73.6974,
-        currentLng: route.stops?.[0]?.lng || route.stops?.[0]?.Longitude || 73.6974,
-        currentStop: route.stops?.[0]?.name || route.stops?.[0]?.StopName || 'Start Terminal',
-        nextStop: route.stops?.[1]?.name || route.stops?.[1]?.StopName || 'Next Stop',
-        timestamp: new Date().toISOString(),
+  const unassignBus = useCallback(async (busId) => {
+    try {
+      const bus = buses.find((b) => b.id === busId || b.BusID === busId || b.id === parseInt(busId));
+      if (bus && bus.driverId) {
+        await driverApi.assignDriver(bus.driverId, {
+          assigned_bus_id: null,
+          assigned_route_id: null,
+        });
       }
-    }));
-
-    logActivity('Route Changed', `Changed route on ${bus.busNumber || bus.BusNo} to ${routeCleanName}`, 'Assignment');
-    broadcastEvent('BUS_STATE_SYNC', { busId: busCleanId, routeId: routeCleanId });
-    return { success: true };
-  }, [buses, routes, logActivity, broadcastEvent]);
-
-  const unassignDriver = useCallback((driverId) => {
-    const driver = drivers.find((d) => d.id === driverId || d.DriverID === driverId);
-    if (!driver) return;
-
-    const assignedBusId = driver.assignedBusId;
-
-    // Reset Driver
-    setDrivers((prev) =>
-      prev.map((d) =>
-        d.id === driverId || d.DriverID === driverId
-          ? {
-              ...d,
-              assignedBusId: '',
-              assignedBusNumber: 'Unassigned',
-              assignedRouteId: '',
-              assignedRouteName: 'None',
-              status: 'Available',
-            }
-          : d
-      )
-    );
-
-    // Reset Bus if linked
-    if (assignedBusId) {
-      setBuses((prev) =>
-        prev.map((b) =>
-          b.id === assignedBusId || b.BusID === assignedBusId
-            ? {
-                ...b,
-                driverId: '',
-                driverName: 'Unassigned',
-                status: 'At Depot',
-                isLive: false,
-                speed: 0,
-              }
-            : b
-        )
-      );
-
-      // Stop tracking live flag
-      setTracking((prev) => ({
-        ...prev,
-        [assignedBusId]: {
-          ...(prev[assignedBusId] || {}),
-          isLive: false,
-          speed: 0,
-          status: 'At Depot',
-        }
-      }));
-
-      // Complete active trips
-      setTrips((prev) =>
-        prev.map((t) =>
-          (t.busId === assignedBusId || t.driverId === driverId) && t.status === 'In Transit'
-            ? { ...t, status: 'Completed', endTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-            : t
-        )
-      );
+      await refreshAdminData();
+      logActivity('Bus Unassigned', `Unassigned bus ${bus ? (bus.busNumber || bus.BusNo) : busId}`, 'Assignment');
+      return { success: true };
+    } catch (err) {
+      console.error('Error unassigning bus:', err);
+      return { success: false, error: err.message || 'Failed to unassign bus.' };
     }
-
-    logActivity('Driver Unassigned', `Unassigned driver ${driver.name || driver.Name}`, 'Assignment');
-    broadcastEvent('BUS_STATE_SYNC', { driverId, unassigned: true });
-  }, [drivers, logActivity, broadcastEvent]);
-
-  const assignRouteToDriver = useCallback((driverId, routeId) => {
-    const driver = drivers.find((d) => d.id === driverId || d.DriverID === driverId);
-    const route = routes.find((r) => r.id === routeId || r.RouteID === routeId);
-
-    if (!driver || !route) return { success: false, error: 'Driver or Route not found.' };
-
-    const routeCleanId = route.id || route.RouteID;
-    const routeCleanName = route.routeName;
-
-    // Update Driver
-    setDrivers((prev) =>
-      prev.map((d) =>
-        d.id === driverId || d.DriverID === driverId
-          ? {
-              ...d,
-              assignedRouteId: routeCleanId,
-              assignedRouteName: routeCleanName,
-            }
-          : d
-      )
-    );
-
-    // If driver is assigned to a bus, update that bus's route
-    if (driver.assignedBusId) {
-      setBuses((prev) =>
-        prev.map((b) =>
-          b.id === driver.assignedBusId || b.BusID === driver.assignedBusId
-            ? {
-                ...b,
-                routeId: routeCleanId,
-                routeName: routeCleanName,
-              }
-            : b
-        )
-      );
-    }
-
-    logActivity('Route Assigned to Driver', `Assigned ${driver.name || driver.Name} to ${routeCleanName}`, 'Assignment');
-    broadcastEvent('BUS_STATE_SYNC', { driverId, routeId });
-    return { success: true };
-  }, [drivers, routes, logActivity, broadcastEvent]);
-
-  const unassignBus = useCallback((busId) => {
-    const bus = buses.find((b) => b.id === busId || b.BusID === busId);
-    const targetBusId = bus ? (bus.id || bus.BusID) : busId;
-
-    setBuses((prev) =>
-      prev.map((b) =>
-        b.id === targetBusId || b.BusID === targetBusId
-          ? { ...b, driverId: '', driverName: 'Unassigned', routeId: '', routeName: 'Unassigned', status: 'At Depot', isLive: false, speed: 0 }
-          : b
-      )
-    );
-
-    setDrivers((prev) =>
-      prev.map((d) =>
-        d.assignedBusId === targetBusId
-          ? { ...d, assignedBusId: '', assignedBusNumber: 'Unassigned', assignedRouteId: '', assignedRouteName: 'None', status: 'Available' }
-          : d
-      )
-    );
-
-    setTracking((prev) => ({
-      ...prev,
-      [targetBusId]: {
-        ...(prev[targetBusId] || {}),
-        isLive: false,
-        speed: 0,
-        status: 'At Depot',
-      }
-    }));
-
-    setTrips((prev) =>
-      prev.map((t) =>
-        t.busId === targetBusId && t.status === 'In Transit'
-          ? { ...t, status: 'Completed', endTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-          : t
-      )
-    );
-
-    logActivity('Bus Unassigned', `Unassigned bus ${bus ? (bus.busNumber || bus.BusNo) : targetBusId}`, 'Assignment');
-    broadcastEvent('BUS_STATE_SYNC', { busId: targetBusId, unassigned: true });
-  }, [buses, logActivity, broadcastEvent]);
+  }, [buses, refreshAdminData, logActivity]);
 
   /**
    * 7. ROUTE CRUD (Shared Context)
@@ -1600,247 +1523,127 @@ export const AppProvider = ({ children }) => {
     };
   };
 
-  const addRoute = useCallback((newRoute) => {
-    const rId = newRoute.RouteID || newRoute.routeId || newRoute.id || `route_${Date.now()}`;
-    const rName = newRoute.routeName || newRoute.RouteName || newRoute.name || 'Custom Transit Route';
-    const dist = newRoute.distance || newRoute.Distance || newRoute.totalDistance || '10 km';
-    const dur = newRoute.estimatedDuration || newRoute.EstimatedDuration || newRoute.duration || '25 mins';
-    const rawStops = Array.isArray(newRoute.stops || newRoute.Stops) ? (newRoute.stops || newRoute.Stops) : [];
-    const normalizedStops = rawStops.map((s, idx) => normalizeStop(s, idx));
-
-    const startPt = newRoute.StartPoint || newRoute.startPoint || (normalizedStops.length > 0 ? normalizedStops[0].name : 'Start Station');
-    const endPt = newRoute.EndPoint || newRoute.endPoint || newRoute.destination || (normalizedStops.length > 0 ? normalizedStops[normalizedStops.length - 1].name : 'Terminal Station');
-
-    const normalized = {
-      RouteID: rId,
-      id: rId,
-      routeId: rId,
-      routeName: rName,
-      RouteName: rName,
-      StartPoint: startPt,
-      startPoint: startPt,
-      EndPoint: endPt,
-      endPoint: endPt,
-      destination: endPt,
-      distance: dist,
-      Distance: dist,
-      totalDistance: dist,
-      estimatedDuration: dur,
-      EstimatedDuration: dur,
-      status: newRoute.status || 'Active',
-      schedules: newRoute.schedules || ['08:00 AM', '01:00 PM', '05:00 PM'],
-      stops: normalizedStops,
-      Stops: normalizedStops,
-    };
-
-    setRoutes((prev) => {
-      const next = [...prev, normalized];
-      broadcastEvent('ROUTES_SYNC', { routes: next });
-      return next;
-    });
-
-    logActivity('Route Created', `Created route ${rName} with ${normalizedStops.length} stops`, 'Route');
-    return normalized;
-  }, [logActivity, broadcastEvent]);
-
-  const updateRoute = useCallback((routeId, updatedFields) => {
-    setRoutes((prev) => {
-      const next = prev.map((r) => {
-        if (r.id !== routeId && r.RouteID !== routeId) return r;
-
-        let stops = r.stops;
-        if (updatedFields.stops || updatedFields.Stops) {
-          stops = (updatedFields.stops || updatedFields.Stops).map((s, idx) => normalizeStop(s, idx));
-        }
-
-        const rName = updatedFields.routeName || updatedFields.RouteName || r.routeName;
-        const startPt = updatedFields.StartPoint || updatedFields.startPoint || (stops.length > 0 ? stops[0].name : r.startPoint);
-        const endPt = updatedFields.EndPoint || updatedFields.endPoint || updatedFields.destination || (stops.length > 0 ? stops[stops.length - 1].name : r.endPoint);
-        const dist = updatedFields.distance || updatedFields.Distance || updatedFields.totalDistance || r.totalDistance;
-        const dur = updatedFields.estimatedDuration || updatedFields.EstimatedDuration || r.estimatedDuration;
-
-        return {
-          ...r,
-          ...updatedFields,
-          routeName: rName,
-          RouteName: rName,
-          StartPoint: startPt,
-          startPoint: startPt,
-          EndPoint: endPt,
-          endPoint: endPt,
-          destination: endPt,
-          distance: dist,
-          Distance: dist,
-          totalDistance: dist,
-          estimatedDuration: dur,
-          EstimatedDuration: dur,
-          stops,
-          Stops: stops
-        };
-      });
-
-      broadcastEvent('ROUTES_SYNC', { routes: next });
-      return next;
-    });
-
-    // Cascade route name update to assigned buses
-    if (updatedFields.routeName) {
-      setBuses((prevBuses) => {
-        const nextBuses = prevBuses.map((b) => (b.routeId === routeId || b.RouteID === routeId ? { ...b, routeName: updatedFields.routeName } : b));
-        broadcastEvent('BUSES_SYNC', { buses: nextBuses });
-        return nextBuses;
-      });
-
-      setDrivers((prevDrivers) => {
-        const nextDrivers = prevDrivers.map((d) => (d.assignedRouteId === routeId ? { ...d, assignedRouteName: updatedFields.routeName } : d));
-        broadcastEvent('DRIVERS_SYNC', { drivers: nextDrivers });
-        return nextDrivers;
-      });
-    }
-
-    logActivity('Route Updated', `Updated route ${routeId}`, 'Route');
-  }, [logActivity, broadcastEvent]);
-
-  const deleteRoute = useCallback((routeId) => {
-    setRoutes((prev) => {
-      const next = prev.filter((r) => r.id !== routeId && r.RouteID !== routeId);
-      broadcastEvent('ROUTES_SYNC', { routes: next });
-      return next;
-    });
-
-    // Cascade unlinking on assigned buses
-    setBuses((prevBuses) => {
-      const nextBuses = prevBuses.map((b) => {
-        if (b.routeId === routeId || b.RouteID === routeId) {
-          return { ...b, routeId: '', routeName: 'Unassigned', isLive: false, status: 'At Depot' };
-        }
-        return b;
-      });
-      broadcastEvent('BUSES_SYNC', { buses: nextBuses });
-      return nextBuses;
-    });
-
-    // Cascade unlinking on assigned drivers
-    setDrivers((prevDrivers) => {
-      const nextDrivers = prevDrivers.map((d) => {
-        if (d.assignedRouteId === routeId) {
-          return { ...d, assignedRouteId: '', assignedRouteName: 'None' };
-        }
-        return d;
-      });
-      broadcastEvent('DRIVERS_SYNC', { drivers: nextDrivers });
-      return nextDrivers;
-    });
-
-    logActivity('Route Deleted', `Deleted route ${routeId} and unassigned linked assets`, 'Route');
-  }, [logActivity, broadcastEvent]);
-
   /**
-   * STOPS OPERATIONS: Add, Edit, Delete, Reorder
+   * 7. ROUTE & STOP MANAGEMENT (Shared Context with REST API Integration)
    */
-  const addStopToRoute = useCallback((routeId, stopData) => {
-    setRoutes((prev) => {
-      const next = prev.map((r) => {
-        if (r.id !== routeId && r.RouteID !== routeId) return r;
+  const addRoute = useCallback(async (newRoute) => {
+    try {
+      const routePayload = {
+        route_code: newRoute.routeCode || newRoute.id || `R-${Math.floor(10 + Math.random() * 90)}`,
+        name: newRoute.routeName || newRoute.RouteName,
+        start_point: newRoute.startPoint || newRoute.StartPoint,
+        end_point: newRoute.endPoint || newRoute.EndPoint || newRoute.destination,
+        distance_km: parseFloat(newRoute.totalDistance || newRoute.distance || 10),
+        estimated_duration: newRoute.estimatedDuration || '25 mins',
+        status: newRoute.status || 'Active',
+      };
+      const res = await routeApi.createRoute(routePayload);
+      const createdRoute = res.data;
+      const createdRouteId = createdRoute.id;
 
-        const currentStops = [...(r.stops || [])];
-        const newStop = normalizeStop(stopData, currentStops.length);
-        
-        // Insert at designated sequence or append to end
-        let updatedStops;
-        if (stopData.sequence && stopData.sequence <= currentStops.length) {
-          const insertIdx = Math.max(0, stopData.sequence - 1);
-          currentStops.splice(insertIdx, 0, newStop);
-          updatedStops = currentStops.map((s, idx) => normalizeStop(s, idx));
-        } else {
-          updatedStops = [...currentStops, newStop].map((s, idx) => normalizeStop(s, idx));
+      if (Array.isArray(newRoute.stops) && newRoute.stops.length > 0) {
+        for (let idx = 0; idx < newRoute.stops.length; idx++) {
+          const s = newRoute.stops[idx];
+          await routeApi.createRouteStop(createdRouteId, {
+            stop_name: s.name || s.StopName,
+            latitude: parseFloat(s.lat || s.Latitude || 24.5850),
+            longitude: parseFloat(s.lng || s.Longitude || 73.6900),
+            stop_order: s.sequenceOrder || s.sequence || idx + 1,
+            scheduled_arrival: s.estimatedTime || s.ExpectedArrivalTime || '08:30 AM',
+          });
         }
+      }
 
-        const startPt = updatedStops.length > 0 ? updatedStops[0].name : r.startPoint;
-        const endPt = updatedStops.length > 0 ? updatedStops[updatedStops.length - 1].name : r.endPoint;
+      await refreshAdminData();
+      logActivity('Route Created', `Created route ${routePayload.name}`, 'Route');
+      return { success: true, data: createdRoute };
+    } catch (err) {
+      console.error('Error creating route:', err);
+      return { success: false, error: err.message || 'Failed to create route.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
-        return {
-          ...r,
-          StartPoint: startPt,
-          startPoint: startPt,
-          EndPoint: endPt,
-          endPoint: endPt,
-          destination: endPt,
-          stops: updatedStops,
-          Stops: updatedStops
-        };
-      });
+  const updateRoute = useCallback(async (routeId, updatedFields) => {
+    try {
+      const payload = {};
+      if (updatedFields.routeName || updatedFields.RouteName) payload.name = updatedFields.routeName || updatedFields.RouteName;
+      if (updatedFields.startPoint || updatedFields.StartPoint) payload.start_point = updatedFields.startPoint || updatedFields.StartPoint;
+      if (updatedFields.endPoint || updatedFields.EndPoint || updatedFields.destination) payload.end_point = updatedFields.endPoint || updatedFields.EndPoint || updatedFields.destination;
+      if (updatedFields.totalDistance || updatedFields.distance) payload.distance_km = parseFloat(updatedFields.totalDistance || updatedFields.distance);
+      if (updatedFields.estimatedDuration) payload.estimated_duration = updatedFields.estimatedDuration;
+      if (updatedFields.status) payload.status = updatedFields.status;
 
-      broadcastEvent('ROUTES_SYNC', { routes: next });
-      return next;
-    });
+      const res = await routeApi.updateRoute(routeId, payload);
+      await refreshAdminData();
+      logActivity('Route Updated', `Updated route ${routeId}`, 'Route');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error updating route:', err);
+      return { success: false, error: err.message || 'Failed to update route.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
-    logActivity('Stop Added', `Added stop ${stopData.name || stopData.StopName} to route ${routeId}`, 'Route');
-  }, [logActivity, broadcastEvent]);
+  const deleteRoute = useCallback(async (routeId) => {
+    try {
+      const res = await routeApi.deleteRoute(routeId);
+      await refreshAdminData();
+      logActivity('Route Deleted', `Deleted route ${routeId}`, 'Route');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error deleting route:', err);
+      return { success: false, error: err.message || 'Failed to delete route.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
-  const updateStopInRoute = useCallback((routeId, stopId, updatedStopFields) => {
-    setRoutes((prev) => {
-      const next = prev.map((r) => {
-        if (r.id !== routeId && r.RouteID !== routeId) return r;
+  const addStopToRoute = useCallback(async (routeId, stopData) => {
+    try {
+      const payload = {
+        stop_name: stopData.name || stopData.StopName,
+        latitude: parseFloat(stopData.lat || stopData.Latitude || 24.5850),
+        longitude: parseFloat(stopData.lng || stopData.Longitude || 73.6900),
+        stop_order: parseInt(stopData.sequence || stopData.sequenceOrder || 1),
+        scheduled_arrival: stopData.estimatedTime || stopData.ExpectedArrivalTime || '08:30 AM',
+      };
+      const res = await routeApi.createRouteStop(routeId, payload);
+      await refreshAdminData();
+      logActivity('Stop Added', `Added stop ${payload.stop_name} to route ${routeId}`, 'Route');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error adding stop:', err);
+      return { success: false, error: err.message || 'Failed to add route stop.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
-        const updatedStops = (r.stops || []).map((s, idx) => {
-          if (s.id === stopId || s.StopID === stopId) {
-            return normalizeStop({ ...s, ...updatedStopFields }, idx);
-          }
-          return s;
-        });
+  const updateStopInRoute = useCallback(async (routeId, stopId, updatedStopFields) => {
+    try {
+      const payload = {};
+      if (updatedStopFields.name || updatedStopFields.StopName) payload.stop_name = updatedStopFields.name || updatedStopFields.StopName;
+      if (updatedStopFields.lat !== undefined) payload.latitude = parseFloat(updatedStopFields.lat);
+      if (updatedStopFields.lng !== undefined) payload.longitude = parseFloat(updatedStopFields.lng);
+      if (updatedStopFields.sequence !== undefined) payload.stop_order = parseInt(updatedStopFields.sequence);
+      if (updatedStopFields.estimatedTime || updatedStopFields.ExpectedArrivalTime) payload.scheduled_arrival = updatedStopFields.estimatedTime || updatedStopFields.ExpectedArrivalTime;
 
-        const startPt = updatedStops.length > 0 ? updatedStops[0].name : r.startPoint;
-        const endPt = updatedStops.length > 0 ? updatedStops[updatedStops.length - 1].name : r.endPoint;
+      const res = await routeApi.updateRouteStop(routeId, stopId, payload);
+      await refreshAdminData();
+      logActivity('Stop Updated', `Updated stop ${stopId} on route ${routeId}`, 'Route');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error updating stop:', err);
+      return { success: false, error: err.message || 'Failed to update route stop.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
-        return {
-          ...r,
-          StartPoint: startPt,
-          startPoint: startPt,
-          EndPoint: endPt,
-          endPoint: endPt,
-          destination: endPt,
-          stops: updatedStops,
-          Stops: updatedStops
-        };
-      });
-
-      broadcastEvent('ROUTES_SYNC', { routes: next });
-      return next;
-    });
-
-    logActivity('Stop Updated', `Updated stop ${stopId} on route ${routeId}`, 'Route');
-  }, [logActivity, broadcastEvent]);
-
-  const deleteStopFromRoute = useCallback((routeId, stopId) => {
-    setRoutes((prev) => {
-      const next = prev.map((r) => {
-        if (r.id !== routeId && r.RouteID !== routeId) return r;
-
-        const filteredStops = (r.stops || []).filter((s) => s.id !== stopId && s.StopID !== stopId);
-        const resequencedStops = filteredStops.map((s, idx) => normalizeStop(s, idx));
-
-        const startPt = resequencedStops.length > 0 ? resequencedStops[0].name : 'Start Station';
-        const endPt = resequencedStops.length > 0 ? resequencedStops[resequencedStops.length - 1].name : 'Terminal Station';
-
-        return {
-          ...r,
-          StartPoint: startPt,
-          startPoint: startPt,
-          EndPoint: endPt,
-          endPoint: endPt,
-          destination: endPt,
-          stops: resequencedStops,
-          Stops: resequencedStops
-        };
-      });
-
-      broadcastEvent('ROUTES_SYNC', { routes: next });
-      return next;
-    });
-
-    logActivity('Stop Deleted', `Deleted stop ${stopId} from route ${routeId}`, 'Route');
-  }, [logActivity, broadcastEvent]);
+  const deleteStopFromRoute = useCallback(async (routeId, stopId) => {
+    try {
+      const res = await routeApi.deleteRouteStop(routeId, stopId);
+      await refreshAdminData();
+      logActivity('Stop Deleted', `Deleted stop ${stopId} from route ${routeId}`, 'Route');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error deleting stop:', err);
+      return { success: false, error: err.message || 'Failed to delete route stop.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
   const moveStopOrder = useCallback((routeId, stopId, direction) => {
     setRoutes((prev) => {
@@ -1911,96 +1714,99 @@ export const AppProvider = ({ children }) => {
   }, [logActivity, broadcastEvent]);
 
   /**
-   * 8. COMPLAINTS (Student -> Admin Shared Context)
+   * 8. COMPLAINTS (Student -> Admin Shared Context with REST API Integration)
    */
-  const addComplaint = useCallback((complaintData) => {
-    const newId = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
-    const now = new Date();
-    const formattedDate = `${now.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}`;
-    const formattedTime = `${formattedDate}, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  const addComplaint = useCallback(async (complaintData) => {
+    try {
+      const busObj = buses.find((b) => b.busNumber === complaintData.busNo || b.busNumber === complaintData.busNumber || b.id === complaintData.busId);
+      const routeObj = routes.find((r) => r.routeName === complaintData.routeName || r.id === complaintData.routeId);
 
-    const normalizedComplaint = {
-      id: newId,
-      complaintId: newId,
-      title: complaintData.title || complaintData.subject || `${complaintData.category || 'Transit'} Issue`,
-      subject: complaintData.title || complaintData.subject || `${complaintData.category || 'Transit'} Issue`,
-      category: complaintData.category || 'Bus Delay',
-      busNo: complaintData.busNo || complaintData.busNumber || complaintData.BusNo || 'BUS-101',
-      busNumber: complaintData.busNo || complaintData.busNumber || complaintData.BusNo || 'BUS-101',
-      description: complaintData.description || 'Grievance submitted by student',
-      userId: complaintData.userId || complaintData.UserID || 'user_student_1',
-      studentId: complaintData.studentId || complaintData.studentID || 'STU-2026-001',
-      studentName: complaintData.studentName || 'Student',
-      studentEmail: complaintData.studentEmail || 'student@smartbus.edu',
-      routeName: complaintData.routeName || 'Assigned Transit Route',
-      date: formattedDate,
-      createdAt: formattedTime,
-      timestamp: formattedTime,
-      status: complaintData.status || 'Pending',
-      priority: complaintData.priority || 'Medium',
-      adminRemark: '',
-      adminResponse: '',
-      resolvedAt: null,
-    };
+      const payload = {
+        bus_id: busObj ? parseInt(busObj.id || busObj.BusID, 10) : null,
+        route_id: routeObj ? parseInt(routeObj.id || routeObj.RouteID, 10) : null,
+        subject: complaintData.title || complaintData.subject || `${complaintData.category || 'Transit'} Issue`,
+        category: complaintData.category || 'Bus Delay',
+        description: complaintData.description || 'Grievance submitted by student',
+        priority: complaintData.priority || 'Medium',
+      };
 
-    setComplaints((prev) => {
-      const next = [normalizedComplaint, ...prev];
-      broadcastEvent('COMPLAINTS_SYNC', { complaints: next });
-      return next;
-    });
+      const res = await complaintApi.createComplaint(payload);
+      await refreshAdminData();
+      logActivity('Complaint Lodged', `Complaint logged for ${complaintData.busNo || 'Transit'}`, 'Notice');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error creating complaint:', err);
+      return { success: false, error: err.message || 'Failed to submit complaint.' };
+    }
+  }, [buses, routes, refreshAdminData, logActivity]);
 
-    logActivity('Complaint Lodged', `Complaint ${newId} logged by ${normalizedComplaint.studentName} for ${normalizedComplaint.busNo}`, 'Notice');
-    return normalizedComplaint;
-  }, [logActivity, broadcastEvent]);
-
-  const updateComplaintStatus = useCallback((complaintId, status, remark = '') => {
-    const now = new Date();
-    const resolvedTime = status === 'Resolved' ? `${now.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : null;
-
-    setComplaints((prev) => {
-      const next = prev.map((c) => {
-        if (c.id === complaintId || c.complaintId === complaintId) {
-          const responseText = remark !== undefined && remark !== '' ? remark : (c.adminResponse || c.adminRemark || '');
-          return {
-            ...c,
-            status,
-            adminRemark: responseText,
-            adminResponse: responseText,
-            resolvedAt: resolvedTime || c.resolvedAt,
-            updatedAt: new Date().toISOString(),
-          };
-        }
-        return c;
-      });
-      broadcastEvent('COMPLAINTS_SYNC', { complaints: next });
-      return next;
-    });
-
-    logActivity('Complaint Updated', `Complaint ${complaintId} status changed to ${status}${remark ? ` with response: "${remark}"` : ''}`, 'Notice');
-  }, [logActivity, broadcastEvent]);
+  const updateComplaintStatus = useCallback(async (complaintId, status, remark = '') => {
+    try {
+      const numericId = parseInt(String(complaintId).replace(/\D/g, ''), 10) || complaintId;
+      const payload = {
+        status,
+        admin_response: remark
+      };
+      await complaintApi.updateComplaint(numericId, payload);
+      await refreshAdminData();
+      logActivity('Complaint Updated', `Complaint ${complaintId} status changed to ${status}`, 'Notice');
+      return { success: true };
+    } catch (err) {
+      console.error('Error updating complaint:', err);
+      return { success: false, error: err.message || 'Failed to update complaint.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
   /**
-   * 9. NOTICES & MAINTENANCE
+   * 9. NOTICES & MAINTENANCE (REST API Integrated)
    */
-  const publishNotice = useCallback((newNotice) => {
-    const noticeObj = {
-      id: newNotice.id || `notif_${Date.now()}`,
-      title: newNotice.title || 'General Notice',
-      message: newNotice.message || '',
-      type: newNotice.type || 'General Announcement',
-      target: newNotice.target || 'All Students',
-      timestamp: newNotice.timestamp || 'Just Now',
-      author: newNotice.author || 'Transport Control',
-    };
+  const publishNotice = useCallback(async (newNotice) => {
+    try {
+      const payload = {
+        title: newNotice.title || 'General Notice',
+        message: newNotice.message || '',
+        type: newNotice.type || 'General Announcement',
+        target: newNotice.target || 'All Students',
+      };
+      const res = await noticeApi.createNotice(payload);
+      await refreshAdminData();
+      logActivity('Notice Published', `Broadcasted notice: ${payload.title}`, 'Notice');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error publishing notice:', err);
+      return { success: false, error: err.message || 'Failed to publish notice.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
-    setNotices((prev) => {
-      const next = [noticeObj, ...prev];
-      broadcastEvent('NOTICES_SYNC', { notices: next });
-      return next;
-    });
+  const updateNotice = useCallback(async (noticeId, updatedNotice) => {
+    try {
+      const payload = {};
+      if (updatedNotice.title) payload.title = updatedNotice.title;
+      if (updatedNotice.message) payload.message = updatedNotice.message;
+      if (updatedNotice.type) payload.type = updatedNotice.type;
+      if (updatedNotice.target) payload.target = updatedNotice.target;
 
-    logActivity('Notice Published', `Broadcasted notice: ${noticeObj.title}`, 'Notice');
-  }, [logActivity, broadcastEvent]);
+      const res = await noticeApi.updateNotice(noticeId, payload);
+      await refreshAdminData();
+      logActivity('Notice Updated', `Updated notice ${noticeId}`, 'Notice');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error updating notice:', err);
+      return { success: false, error: err.message || 'Failed to update notice.' };
+    }
+  }, [refreshAdminData, logActivity]);
+
+  const deleteNotice = useCallback(async (noticeId) => {
+    try {
+      const res = await noticeApi.deleteNotice(noticeId);
+      await refreshAdminData();
+      logActivity('Notice Deleted', `Deleted notice ${noticeId}`, 'Notice');
+      return { success: true, data: res.data };
+    } catch (err) {
+      console.error('Error deleting notice:', err);
+      return { success: false, error: err.message || 'Failed to delete notice.' };
+    }
+  }, [refreshAdminData, logActivity]);
 
   const setBusMaintenance = useCallback((busId, issue, mechanic, expectedReturn, cost) => {
     const bus = buses.find((b) => b.id === busId || b.BusID === busId);
@@ -2062,6 +1868,77 @@ export const AppProvider = ({ children }) => {
     broadcastEvent('BUS_STATE_SYNC', { busNumber, status: 'At Depot' });
   }, [logActivity, broadcastEvent]);
 
+  /**
+   * Atomic Real-Time Socket.IO Telemetry Updater
+   */
+  const updateLiveTelemetry = useCallback((telemetryData) => {
+    if (!telemetryData || !telemetryData.bus_id) return;
+    const busIdInt = parseInt(telemetryData.bus_id, 10);
+    const lat = parseFloat(telemetryData.latitude);
+    const lng = parseFloat(telemetryData.longitude);
+    const spd = parseFloat(telemetryData.speed || 0);
+    const currStop = telemetryData.current_stop || 'In Transit';
+    const nxtStop = telemetryData.next_stop || 'Next Stop';
+    const eta = parseInt(telemetryData.eta_minutes, 10) || 0;
+    const timestamp = telemetryData.timestamp || new Date().toISOString();
+
+    setTracking((prev) => {
+      return {
+        ...prev,
+        [busIdInt]: {
+          ...(prev[busIdInt] || {}),
+          BusID: busIdInt,
+          busId: busIdInt,
+          busNumber: telemetryData.bus_number || prev[busIdInt]?.busNumber || `BUS-${busIdInt}`,
+          driverId: telemetryData.driver_id || prev[busIdInt]?.driverId,
+          driverName: telemetryData.driver_name || prev[busIdInt]?.driverName || 'Driver',
+          routeId: telemetryData.route_id || prev[busIdInt]?.routeId,
+          routeName: telemetryData.route_name || prev[busIdInt]?.routeName || 'Assigned Route',
+          Latitude: lat,
+          currentLat: lat,
+          Longitude: lng,
+          currentLng: lng,
+          speed: spd,
+          currentStop: currStop,
+          nextStop: nxtStop,
+          etaMinutes: eta,
+          etaText: `~${eta} mins`,
+          isLive: true,
+          timestamp: timestamp,
+          lastUpdated: timestamp,
+        }
+      };
+    });
+
+    setBuses((prevBuses) => {
+      let changed = false;
+      const updated = prevBuses.map((b) => {
+        const bId = parseInt(b.id || b.BusID, 10);
+        if (bId === busIdInt) {
+          changed = true;
+          return {
+            ...b,
+            currentLat: lat,
+            Latitude: lat,
+            currentLng: lng,
+            Longitude: lng,
+            speed: spd,
+            currentStop: currStop,
+            nextStop: nxtStop,
+            etaMinutes: eta,
+            etaText: `~${eta} mins`,
+            isLive: true,
+            status: b.status === 'At Depot' ? 'In Transit' : b.status,
+            lastUpdated: timestamp,
+            timestamp: timestamp,
+          };
+        }
+        return b;
+      });
+      return changed ? updated : prevBuses;
+    });
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -2075,7 +1952,7 @@ export const AppProvider = ({ children }) => {
         complaints,
         trips,
 
-        // Supporting States
+        // Supporting States & Data Loading
         notices,
         activityLogs,
         maintenanceLogs,
@@ -2085,6 +1962,10 @@ export const AppProvider = ({ children }) => {
         setSearchQuery,
         isDriverBroadcasting,
         setIsDriverBroadcasting,
+        isDataLoading,
+        dataLoadError,
+        refreshAdminData,
+        updateLiveTelemetry,
 
         // Atomic Core Actions
         startTrip,
@@ -2114,6 +1995,8 @@ export const AppProvider = ({ children }) => {
         addComplaint,
         updateComplaintStatus,
         publishNotice,
+        updateNotice,
+        deleteNotice,
         reportDelay,
         setBusTimingStatus,
         setBusMaintenance,

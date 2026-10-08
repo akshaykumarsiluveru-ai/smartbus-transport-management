@@ -1,187 +1,158 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { INITIAL_USERS } from '../services/mockData';
-import {
-  hashPassword,
-  getRegisteredUsers,
-  saveRegisteredUsers,
-  getStoredCredentials,
-  saveStoredCredentials,
-  getCurrentUserSession,
-  saveCurrentUserSession,
-  clearCurrentUserSession,
-  generateDigitalPassId,
-} from '../services/authStorage';
+import { login as apiLogin, register as apiRegister, getMe as apiGetMe } from '../services/authApi';
+import { getToken, setToken, removeToken } from '../services/tokenStorage';
+import { ApiError } from '../services/api';
+import { disconnectSocket } from '../services/socket';
 
 const AuthContext = createContext();
 
+/**
+ * Normalizes user object fields to support both camelCase and snake_case for frontend UI compatibility
+ */
+const normalizeUser = (user) => {
+  if (!user) return null;
+  return {
+    ...user,
+    studentId: user.studentId || user.student_id || null,
+    digitalPassId: user.digitalPassId || user.digital_pass_id || null,
+  };
+};
+
 export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(() => getCurrentUserSession());
+  const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [authView, setAuthView] = useState('login'); // 'login' | 'register'
   const [authSuccessMessage, setAuthSuccessMessage] = useState('');
   const [prefilledEmail, setPrefilledEmail] = useState('');
 
-  // Synchronize session on mount
+  // Restore session on application startup via GET /api/auth/me
   useEffect(() => {
-    const savedUser = getCurrentUserSession();
-    if (savedUser) {
-      setCurrentUser(savedUser);
-    }
+    const restoreSession = async () => {
+      const token = getToken();
+      if (!token) {
+        setCurrentUser(null);
+        setIsInitializing(false);
+        return;
+      }
+
+      try {
+        const response = await apiGetMe();
+        if (response && response.success && response.user) {
+          setCurrentUser(normalizeUser(response.user));
+        } else {
+          removeToken();
+          setCurrentUser(null);
+        }
+      } catch (error) {
+        // Token invalid or expired
+        removeToken();
+        setCurrentUser(null);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    restoreSession();
   }, []);
 
   /**
-   * Register a new student account
-   * Role is automatically and strictly set to "student"
-   */
-  const register = async (studentData, password) => {
-    setIsLoading(true);
-    try {
-      // Simulate network / processing delay
-      await new Promise((res) => setTimeout(res, 600));
-
-      const normalizedEmail = studentData.email.trim().toLowerCase();
-      const normalizedStudentId = studentData.studentId.trim().toUpperCase();
-
-      // Check for existing user in demo users or registered users
-      const existingRegistered = getRegisteredUsers();
-      const allUsers = [...INITIAL_USERS, ...existingRegistered];
-
-      const emailExists = allUsers.some(
-        (u) => u.email.toLowerCase() === normalizedEmail
-      );
-      if (emailExists) {
-        setIsLoading(false);
-        return {
-          success: false,
-          error: 'An account with this email address already exists. Please sign in.',
-        };
-      }
-
-      const idExists = allUsers.some(
-        (u) => u.studentId && u.studentId.toUpperCase() === normalizedStudentId
-      );
-      if (idExists) {
-        setIsLoading(false);
-        return {
-          success: false,
-          error: 'This Student ID is already registered in the system.',
-        };
-      }
-
-      // Hash password (never plain-text)
-      const hashedPassword = await hashPassword(password);
-
-      // Create new student user object
-      const newUser = {
-        id: `user_student_${Date.now()}`,
-        name: studentData.name.trim(),
-        email: normalizedEmail,
-        phone: studentData.phone.trim(),
-        studentId: normalizedStudentId,
-        department: studentData.department,
-        year: studentData.year,
-        photoUrl: studentData.photoUrl || null,
-        role: 'student', // Locked to student
-        digitalPassId: generateDigitalPassId(studentData.year),
-        createdAt: new Date().toISOString(),
-      };
-
-      // Save user to registered users list
-      const updatedUsers = [newUser, ...existingRegistered];
-      saveRegisteredUsers(updatedUsers);
-
-      // Save credential hash
-      const credentials = getStoredCredentials();
-      credentials[normalizedEmail] = hashedPassword;
-      saveStoredCredentials(credentials);
-
-      // Pre-fill email and set success banner for login transition
-      setPrefilledEmail(newUser.email);
-      setAuthSuccessMessage('Account created successfully! Please sign in with your password.');
-      setAuthView('login');
-      setIsLoading(false);
-
-      return { success: true, user: newUser };
-    } catch (err) {
-      console.error('Registration error:', err);
-      setIsLoading(false);
-      return { success: false, error: 'Registration failed due to an unexpected error. Please try again.' };
-    }
-  };
-
-  /**
-   * Log in using email & password
+   * Log in using backend authentication API (POST /api/auth/login)
    */
   const login = async (email, password) => {
     setIsLoading(true);
     setAuthSuccessMessage('');
     try {
-      await new Promise((res) => setTimeout(res, 500));
-      const normalizedEmail = email.trim().toLowerCase();
+      const response = await apiLogin(email, password);
 
-      // 1. Check Demo Accounts
-      const demoUser = INITIAL_USERS.find(
-        (u) => u.email.toLowerCase() === normalizedEmail
-      );
-      if (demoUser) {
-        // Accept default password or any password for demo users
-        saveCurrentUserSession(demoUser);
-        setCurrentUser(demoUser);
+      if (response && response.success && response.token) {
+        setToken(response.token);
+        const normalizedUser = normalizeUser(response.user);
+        setCurrentUser(normalizedUser);
         setIsLoading(false);
-        return { success: true, user: demoUser };
-      }
-
-      // 2. Check Registered Users
-      const registeredUsers = getRegisteredUsers();
-      const user = registeredUsers.find(
-        (u) => u.email.toLowerCase() === normalizedEmail
-      );
-
-      if (user) {
-        const credentials = getStoredCredentials();
-        const storedHash = credentials[normalizedEmail];
-        const enteredHash = await hashPassword(password);
-
-        if (storedHash && storedHash === enteredHash) {
-          saveCurrentUserSession(user);
-          setCurrentUser(user);
-          setIsLoading(false);
-          return { success: true, user };
-        } else {
-          setIsLoading(false);
-          return { success: false, error: 'Incorrect password. Please verify and try again.' };
-        }
+        return { success: true, user: normalizedUser };
       }
 
       setIsLoading(false);
       return {
         success: false,
-        error: 'No account found with this email address. Please check your credentials or Sign Up.',
+        error: response?.message || 'Login failed. Please check your credentials.',
       };
     } catch (err) {
-      console.error('Login error:', err);
       setIsLoading(false);
-      return { success: false, error: 'An error occurred during login. Please try again.' };
+      const errorMessage =
+        err instanceof ApiError
+          ? err.message
+          : 'An error occurred during login. Please try again.';
+      return { success: false, error: errorMessage };
     }
   };
 
   /**
-   * Instant Role Switcher for live demos
+   * Register a new student account using backend API (POST /api/auth/register)
+   * Public registration is strictly locked to role = "student"
    */
-  const loginAsRole = (role) => {
-    const user = INITIAL_USERS.find((u) => u.role.toLowerCase() === role.toLowerCase());
-    if (user) {
-      saveCurrentUserSession(user);
-      setCurrentUser(user);
-      setAuthSuccessMessage('');
+  const register = async (studentData, password) => {
+    setIsLoading(true);
+    setAuthSuccessMessage('');
+    try {
+      const payload = {
+        name: studentData.name,
+        email: studentData.email,
+        password: password,
+        student_id: studentData.studentId || studentData.student_id,
+        phone: studentData.phone,
+        department: studentData.department,
+        year: studentData.year,
+      };
+
+      const response = await apiRegister(payload);
+
+      if (response && response.success) {
+        const registeredUser = normalizeUser(response.user);
+        setPrefilledEmail(registeredUser.email);
+        setAuthSuccessMessage('Account created successfully! Please sign in with your password.');
+        setAuthView('login');
+        setIsLoading(false);
+        return { success: true, user: registeredUser };
+      }
+
+      setIsLoading(false);
+      return {
+        success: false,
+        error: response?.message || 'Registration failed. Please check your inputs.',
+      };
+    } catch (err) {
+      setIsLoading(false);
+      const errorMessage =
+        err instanceof ApiError
+          ? err.message
+          : 'Registration failed due to an unexpected error. Please try again.';
+      return { success: false, error: errorMessage };
     }
   };
 
   /**
-   * Log out active user
+   * Quick Role Switcher for Demos (authenticates via real backend using seed credentials)
+   */
+  const loginAsRole = async (role) => {
+    const roleKey = role.toLowerCase();
+    const demoCredentials = {
+      admin: { email: 'admin@smartbus.edu', password: 'admin123' },
+      driver: { email: 'driver@smartbus.edu', password: 'driver123' },
+      student: { email: 'student@smartbus.edu', password: 'student123' },
+    };
+
+    const creds = demoCredentials[roleKey] || demoCredentials.student;
+    return await login(creds.email, creds.password);
+  };
+
+  /**
+   * Log out active user session
    */
   const logout = () => {
-    clearCurrentUserSession();
+    disconnectSocket();
+    removeToken();
     setCurrentUser(null);
     setAuthView('login');
     setAuthSuccessMessage('');
@@ -204,6 +175,7 @@ export const AuthProvider = ({ children }) => {
         loginAsRole,
         logout,
         isLoading,
+        isInitializing,
       }}
     >
       {children}

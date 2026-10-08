@@ -8,7 +8,18 @@ import DriverView from './views/driver/DriverView';
 import AdminView from './views/admin/AdminView';
 
 function AppContent() {
-  const { isAuthenticated, role, authView } = useAuth();
+  const { isAuthenticated, role, authView, isInitializing } = useAuth();
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-[85vh] flex items-center justify-center p-4">
+        <div className="flex flex-col items-center space-y-3">
+          <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-bold text-slate-500">Connecting to SmartBus System...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     if (authView === 'register') {

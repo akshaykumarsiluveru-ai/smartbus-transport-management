@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { joinBusRoom, leaveBusRoom, onBusLocationUpdate, offBusLocationUpdate } from '../../services/socket';
 import StatusBadge from '../../components/StatusBadge';
 import Modal from '../../components/Modal';
 import InteractiveMap from '../../components/InteractiveMap';
@@ -64,9 +65,40 @@ const AdminView = () => {
     moveStopOrder,
     reorderRouteStops,
     publishNotice,
+    updateNotice,
+    deleteNotice,
     setBusMaintenance,
-    releaseBusMaintenance
+    releaseBusMaintenance,
+    isDataLoading,
+    dataLoadError,
+    refreshAdminData,
+    updateLiveTelemetry,
   } = useApp();
+
+  // Admin Socket.IO Real-Time Telemetry Subscription Effect
+  useEffect(() => {
+    const activeBusId = selectedBus?.id || selectedBus?.BusID || allBuses[0]?.id || allBuses[0]?.BusID || 1;
+    const busIdInt = parseInt(activeBusId, 10);
+
+    if (!isNaN(busIdInt)) {
+      joinBusRoom(busIdInt);
+    }
+
+    const handleTelemetryUpdate = (eventData) => {
+      if (eventData && typeof updateLiveTelemetry === 'function') {
+        updateLiveTelemetry(eventData);
+      }
+    };
+
+    onBusLocationUpdate(handleTelemetryUpdate);
+
+    return () => {
+      offBusLocationUpdate(handleTelemetryUpdate);
+      if (!isNaN(busIdInt)) {
+        leaveBusRoom(busIdInt);
+      }
+    };
+  }, [selectedBus, allBuses, updateLiveTelemetry]);
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [adminActiveSchemaTable, setAdminActiveSchemaTable] = useState('buses');
@@ -134,9 +166,16 @@ const AdminView = () => {
   const [busToDelete, setBusToDelete] = useState(null);
   const [formErrors, setFormErrors] = useState('');
 
+  // Notice Modals & State
+  const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
+  const [noticeModalOpen, setNoticeModalOpen] = useState(false);
+  const [editingNoticeId, setEditingNoticeId] = useState(null);
+  const [noticeFormErrors, setNoticeFormErrors] = useState('');
+  const [deleteNoticeModalOpen, setDeleteNoticeModalOpen] = useState(false);
+  const [noticeToDelete, setNoticeToDelete] = useState(null);
+
   // Common Modals
   const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
   const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
 
   // Forms
@@ -387,7 +426,7 @@ const AdminView = () => {
     });
   }, [allBuses, liveSearchQuery, liveStatusFilter]);
 
-  const handleCreateBus = (e) => {
+  const handleCreateBus = async (e) => {
     e.preventDefault();
     setFormErrors('');
 
@@ -410,59 +449,25 @@ const AdminView = () => {
       return;
     }
 
-    // Check uniqueness
-    const exists = allBuses.some((b) => (b.busNumber || b.BusNo || '').toUpperCase() === busNumberClean);
-    if (exists) {
-      setFormErrors(`A bus with number "${busNumberClean}" already exists in the fleet.`);
+    const selectedRoute = routes.find((r) => r.id === busForm.routeId || r.RouteID === busForm.routeId);
+    const selectedDriver = drivers.find((d) => d.id === busForm.driverId || d.DriverID === busForm.driverId);
+
+    const res = await addBus({
+      busNumber: busNumberClean,
+      registrationNumber: regNumberClean,
+      model: busForm.model || 'Standard Transit Bus',
+      capacity: capacityNum,
+      fuelType: busForm.fuelType || 'Diesel',
+      status: busForm.status || 'At Depot',
+    });
+
+    if (!res.success) {
+      setFormErrors(res.error || 'Failed to register bus to database.');
       return;
     }
 
-    const selectedRoute = routes.find((r) => r.id === busForm.routeId || r.RouteID === busForm.routeId);
-    const selectedDriver = drivers.find((d) => d.id === busForm.driverId || d.DriverID === busForm.driverId);
-    const busId = `bus_${Date.now()}`;
-    const isLive = busForm.status === 'In Transit';
-
-    const newBus = {
-      BusID: busId,
-      id: busId,
-      BusNo: busNumberClean,
-      busNumber: busNumberClean,
-      registrationNumber: regNumberClean,
-      model: busForm.model || 'Tata Starbus Ultra 52S',
-      Capacity: capacityNum,
-      capacity: capacityNum,
-      fuelType: busForm.fuelType || 'Diesel',
-      driverId: selectedDriver ? (selectedDriver.id || selectedDriver.DriverID) : '',
-      driverName: selectedDriver ? (selectedDriver.name || selectedDriver.Name) : 'Unassigned',
-      routeId: selectedRoute ? (selectedRoute.id || selectedRoute.RouteID) : '',
-      routeName: selectedRoute ? selectedRoute.routeName : 'Unassigned',
-      shift: 'Morning',
-      status: busForm.status,
-      isLive,
-      currentOccupancy: 0,
-      speed: isLive ? 30.0 : 0,
-      currentLat: selectedRoute?.stops?.[0]?.lat || 24.5714,
-      Latitude: selectedRoute?.stops?.[0]?.lat || 24.5714,
-      currentLng: selectedRoute?.stops?.[0]?.lng || 73.6974,
-      Longitude: selectedRoute?.stops?.[0]?.lng || 73.6974,
-      currentStop: selectedRoute?.stops?.[0]?.name || 'Depot Yard',
-      nextStop: selectedRoute?.stops?.[1]?.name || selectedRoute?.stops?.[0]?.name || 'None',
-      etaMinutes: isLive ? 5 : 0,
-      eta: isLive ? 5 : 0,
-      lastUpdated: new Date().toISOString()
-    };
-
-    addBus(newBus);
-
-    // If driver was selected, update driver's assigned bus
-    if (selectedDriver) {
-      updateDriver(selectedDriver.id || selectedDriver.DriverID, {
-        assignedBusId: busId,
-        assignedBusNumber: busNumberClean,
-        assignedRouteId: selectedRoute ? (selectedRoute.id || selectedRoute.RouteID) : '',
-        assignedRouteName: selectedRoute ? selectedRoute.routeName : 'None',
-        status: isLive ? 'On Trip' : 'Available',
-      });
+    if (selectedDriver && res.data?.id) {
+      await assignDriverToBus(res.data.id, selectedDriver.id || selectedDriver.DriverID, selectedRoute?.id, 'Morning');
     }
 
     setAddBusModalOpen(false);
@@ -470,7 +475,7 @@ const AdminView = () => {
     setBusForm({ busNumber: '', registrationNumber: '', model: 'Tata Starbus Ultra 52S', capacity: 52, fuelType: 'Diesel', routeId: '', driverId: '', status: 'At Depot' });
   };
 
-  const handleUpdateBus = (e) => {
+  const handleUpdateBus = async (e) => {
     e.preventDefault();
     if (!editingBusId) return;
     setFormErrors('');
@@ -479,57 +484,29 @@ const AdminView = () => {
     const regNumberClean = busForm.registrationNumber.toUpperCase().trim();
     const capacityNum = parseInt(busForm.capacity) || 0;
 
-    if (!busNumberClean) {
-      setFormErrors('Bus Number is required.');
+    if (!busNumberClean || !regNumberClean || capacityNum <= 0) {
+      setFormErrors('Valid Bus Number, Registration Number, and Capacity are required.');
       return;
     }
 
-    if (!regNumberClean) {
-      setFormErrors('Registration Number is required.');
-      return;
-    }
+    const res = await updateBus(editingBusId, {
+      busNumber: busNumberClean,
+      registrationNumber: regNumberClean,
+      model: busForm.model,
+      capacity: capacityNum,
+      fuelType: busForm.fuelType,
+      status: busForm.status,
+    });
 
-    if (capacityNum <= 0) {
-      setFormErrors('Capacity must be a positive integer greater than 0.');
-      return;
-    }
-
-    // Check duplicate among other buses
-    const duplicate = allBuses.some((b) => (b.id !== editingBusId && b.BusID !== editingBusId) && (b.busNumber || b.BusNo || '').toUpperCase() === busNumberClean);
-    if (duplicate) {
-      setFormErrors(`Another bus already uses the number "${busNumberClean}".`);
+    if (!res.success) {
+      setFormErrors(res.error || 'Failed to update bus in database.');
       return;
     }
 
     const selectedRoute = routes.find((r) => r.id === busForm.routeId || r.RouteID === busForm.routeId);
     const selectedDriver = drivers.find((d) => d.id === busForm.driverId || d.DriverID === busForm.driverId);
-    const isLive = busForm.status === 'In Transit';
-
-    updateBus(editingBusId, {
-      BusNo: busNumberClean,
-      busNumber: busNumberClean,
-      registrationNumber: regNumberClean,
-      model: busForm.model,
-      Capacity: capacityNum,
-      capacity: capacityNum,
-      fuelType: busForm.fuelType,
-      routeId: selectedRoute ? (selectedRoute.id || selectedRoute.RouteID) : '',
-      routeName: selectedRoute ? selectedRoute.routeName : 'Unassigned',
-      driverId: selectedDriver ? (selectedDriver.id || selectedDriver.DriverID) : '',
-      driverName: selectedDriver ? (selectedDriver.name || selectedDriver.Name) : 'Unassigned',
-      status: busForm.status,
-      isLive,
-      speed: isLive ? 32.0 : 0
-    });
-
     if (selectedDriver) {
-      updateDriver(selectedDriver.id || selectedDriver.DriverID, {
-        assignedBusId: editingBusId,
-        assignedBusNumber: busNumberClean,
-        assignedRouteId: selectedRoute ? (selectedRoute.id || selectedRoute.RouteID) : '',
-        assignedRouteName: selectedRoute ? selectedRoute.routeName : 'None',
-        status: isLive ? 'On Trip' : 'Available',
-      });
+      await assignDriverToBus(editingBusId, selectedDriver.id || selectedDriver.DriverID, selectedRoute?.id, 'Morning');
     }
 
     setEditBusModalOpen(false);
@@ -537,13 +514,8 @@ const AdminView = () => {
     setFormErrors('');
   };
 
-  const handleQuickStatusChange = (busId, newStatus) => {
-    const isLive = newStatus === 'In Transit';
-    updateBus(busId, {
-      status: newStatus,
-      isLive,
-      speed: isLive ? 30.0 : 0
-    });
+  const handleQuickStatusChange = async (busId, newStatus) => {
+    await updateBus(busId, { status: newStatus });
   };
 
   const handleOpenBusDetail = (bus) => {
@@ -556,9 +528,13 @@ const AdminView = () => {
     setDeleteBusModalOpen(true);
   };
 
-  const handleConfirmDeleteBus = () => {
+  const handleConfirmDeleteBus = async () => {
     if (!busToDelete) return;
-    deleteBus(busToDelete.id || busToDelete.BusID);
+    const res = await deleteBus(busToDelete.id || busToDelete.BusID);
+    if (!res.success) {
+      alert(res.error || 'Failed to delete bus.');
+      return;
+    }
     setDeleteBusModalOpen(false);
     if (selectedBusForDetail?.id === busToDelete.id) {
       setBusDetailsModalOpen(false);
@@ -566,69 +542,37 @@ const AdminView = () => {
     setBusToDelete(null);
   };
 
-  const handleCreateDriver = (e) => {
+  const handleCreateDriver = async (e) => {
     e.preventDefault();
     setDriverFormErrors('');
 
     const nameClean = driverForm.name.trim();
     const phoneClean = driverForm.phone.trim();
     const licenseClean = (driverForm.licenseNumber || '').toUpperCase().trim();
-    const customIdClean = (driverForm.driverId || '').toUpperCase().trim();
 
-    if (!nameClean) {
-      setDriverFormErrors('Driver full name is required.');
-      return;
-    }
-
-    if (!phoneClean) {
-      setDriverFormErrors('Contact phone number is required.');
-      return;
-    }
-
-    if (!licenseClean) {
-      setDriverFormErrors('Commercial License Number is required (e.g. RJ-27-2024-00100).');
-      return;
-    }
-
-    const genId = customIdClean || `DRV-${Math.floor(100 + Math.random() * 900)}`;
-
-    // Check duplicate ID
-    if (drivers.some((d) => (d.driverId || d.DriverID || d.id) === genId)) {
-      setDriverFormErrors(`A driver with ID "${genId}" already exists.`);
+    if (!nameClean || !phoneClean || !licenseClean) {
+      setDriverFormErrors('Driver Name, Phone, and License Number are required.');
       return;
     }
 
     const selectedBus = allBuses.find((b) => b.id === driverForm.assignedBusId || b.BusID === driverForm.assignedBusId);
     const selectedRoute = routes.find((r) => r.id === driverForm.assignedRouteId || r.RouteID === driverForm.assignedRouteId);
 
-    const newDriver = {
-      id: genId.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
-      driverId: genId,
-      DriverID: genId,
+    const res = await addDriver({
       name: nameClean,
-      Name: nameClean,
       phone: phoneClean,
-      Contact: phoneClean,
-      email: driverForm.email.trim() || `${nameClean.toLowerCase().replace(/\s+/g, '')}@smartbus.edu`,
-      assignedBusId: selectedBus ? (selectedBus.id || selectedBus.BusID) : '',
-      assignedBusNumber: selectedBus ? (selectedBus.busNumber || selectedBus.BusNo) : 'Unassigned',
-      assignedRouteId: selectedRoute ? (selectedRoute.id || selectedRoute.RouteID) : '',
-      assignedRouteName: selectedRoute ? selectedRoute.routeName : 'None',
+      email: driverForm.email.trim(),
+      licenseNumber: licenseClean,
+      employeeId: driverForm.driverId || `EMP-${Date.now()}`,
       status: driverForm.status || 'Available',
       shift: driverForm.shift || 'Morning',
-      tripsToday: 0,
-      rating: '5.0 ⭐',
-      licenseNumber: licenseClean
-    };
+      assignedBusId: selectedBus ? selectedBus.id : null,
+      assignedRouteId: selectedRoute ? selectedRoute.id : null,
+    });
 
-    addDriver(newDriver);
-
-    // If a bus and route were assigned during creation, execute assignment rules
-    if (selectedBus && selectedRoute) {
-      const res = assignDriverToBus(selectedBus.id || selectedBus.BusID, newDriver.id, selectedRoute.id || selectedRoute.RouteID, driverForm.shift);
-      if (res && res.error) {
-        alert(`Driver added, but bus assignment notice: ${res.error}`);
-      }
+    if (!res.success) {
+      setDriverFormErrors(res.error || 'Failed to register driver profile.');
+      return;
     }
 
     setAddDriverModalOpen(false);
@@ -646,7 +590,7 @@ const AdminView = () => {
     });
   };
 
-  const handleUpdateDriver = (e) => {
+  const handleUpdateDriver = async (e) => {
     e.preventDefault();
     if (!editingDriverId) return;
     setDriverFormErrors('');
@@ -663,26 +607,20 @@ const AdminView = () => {
     const selectedBus = allBuses.find((b) => b.id === driverForm.assignedBusId || b.BusID === driverForm.assignedBusId);
     const selectedRoute = routes.find((r) => r.id === driverForm.assignedRouteId || r.RouteID === driverForm.assignedRouteId);
 
-    updateDriver(editingDriverId, {
+    const res = await updateDriver(editingDriverId, {
       name: nameClean,
-      Name: nameClean,
       phone: phoneClean,
-      Contact: phoneClean,
       email: driverForm.email.trim(),
       licenseNumber: licenseClean,
       shift: driverForm.shift,
       status: driverForm.status,
-      assignedBusId: selectedBus ? (selectedBus.id || selectedBus.BusID) : '',
-      assignedBusNumber: selectedBus ? (selectedBus.busNumber || selectedBus.BusNo) : 'Unassigned',
-      assignedRouteId: selectedRoute ? (selectedRoute.id || selectedRoute.RouteID) : '',
-      assignedRouteName: selectedRoute ? selectedRoute.routeName : 'None',
+      assignedBusId: selectedBus ? selectedBus.id : null,
+      assignedRouteId: selectedRoute ? selectedRoute.id : null,
     });
 
-    // If bus was selected, execute assignment
-    if (selectedBus && selectedRoute) {
-      assignDriverToBus(selectedBus.id || selectedBus.BusID, editingDriverId, selectedRoute.id || selectedRoute.RouteID, driverForm.shift);
-    } else if (!selectedBus) {
-      unassignDriver(editingDriverId);
+    if (!res.success) {
+      setDriverFormErrors(res.error || 'Failed to update driver profile.');
+      return;
     }
 
     setEditDriverModalOpen(false);
@@ -690,8 +628,8 @@ const AdminView = () => {
     setDriverFormErrors('');
   };
 
-  const handleQuickDriverStatusChange = (driverId, newStatus) => {
-    updateDriver(driverId, { status: newStatus });
+  const handleQuickDriverStatusChange = async (driverId, newStatus) => {
+    await updateDriver(driverId, { status: newStatus });
   };
 
   const handleOpenDriverDetail = (driver) => {
@@ -704,9 +642,13 @@ const AdminView = () => {
     setDeleteDriverModalOpen(true);
   };
 
-  const handleConfirmDeleteDriver = () => {
+  const handleConfirmDeleteDriver = async () => {
     if (!driverToDelete) return;
-    deleteDriver(driverToDelete.id || driverToDelete.DriverID);
+    const res = await deleteDriver(driverToDelete.id || driverToDelete.DriverID);
+    if (!res.success) {
+      alert(res.error || 'Failed to delete driver.');
+      return;
+    }
     setDeleteDriverModalOpen(false);
     if (selectedDriverForDetail?.id === driverToDelete.id) {
       setDriverDetailsModalOpen(false);
@@ -714,14 +656,14 @@ const AdminView = () => {
     setDriverToDelete(null);
   };
 
-  const handleUnassignDriverAction = (driverId) => {
-    unassignDriver(driverId);
+  const handleUnassignDriverAction = async (driverId) => {
+    await unassignDriver(driverId);
   };
 
   /**
    * CENTRAL ASSIGNMENT ACTION HANDLERS (BUS + DRIVER + ROUTE)
    */
-  const handleExecuteAssignment = (e) => {
+  const handleExecuteAssignment = async (e) => {
     e.preventDefault();
     setAssignmentError('');
     const { busId, driverId, routeId, shift } = assignForm;
@@ -730,9 +672,9 @@ const AdminView = () => {
       return;
     }
 
-    const res = assignDriverToBus(busId, driverId, routeId, shift);
-    if (res && res.error) {
-      setAssignmentError(res.error);
+    const res = await assignDriverToBus(busId, driverId, routeId, shift);
+    if (!res.success) {
+      setAssignmentError(res.error || 'Failed to dispatch assignment.');
       return;
     }
     setAssignModalOpen(false);
@@ -752,7 +694,7 @@ const AdminView = () => {
     setEditAssignModalOpen(true);
   };
 
-  const handleExecuteEditAssignment = (e) => {
+  const handleExecuteEditAssignment = async (e) => {
     e.preventDefault();
     setAssignmentError('');
     const { busId, driverId, routeId, shift } = assignForm;
@@ -761,9 +703,9 @@ const AdminView = () => {
       return;
     }
 
-    const res = assignDriverToBus(busId, driverId, routeId, shift);
-    if (res && res.error) {
-      setAssignmentError(res.error);
+    const res = await assignDriverToBus(busId, driverId, routeId, shift);
+    if (!res.success) {
+      setAssignmentError(res.error || 'Failed to update assignment.');
       return;
     }
     setEditAssignModalOpen(false);
@@ -781,7 +723,7 @@ const AdminView = () => {
     setChangeDriverModalOpen(true);
   };
 
-  const handleExecuteChangeDriver = (e) => {
+  const handleExecuteChangeDriver = async (e) => {
     e.preventDefault();
     setAssignmentError('');
     const { busId, newDriverId } = changeDriverForm;
@@ -790,9 +732,9 @@ const AdminView = () => {
       return;
     }
 
-    const res = changeAssignedDriver(busId, newDriverId);
-    if (res && res.error) {
-      setAssignmentError(res.error);
+    const res = await changeAssignedDriver(busId, newDriverId);
+    if (!res.success) {
+      setAssignmentError(res.error || 'Failed to change driver.');
       return;
     }
     setChangeDriverModalOpen(false);
@@ -810,7 +752,7 @@ const AdminView = () => {
     setChangeRouteModalOpen(true);
   };
 
-  const handleExecuteChangeRoute = (e) => {
+  const handleExecuteChangeRoute = async (e) => {
     e.preventDefault();
     setAssignmentError('');
     const { busId, newRouteId } = changeRouteForm;
@@ -819,9 +761,9 @@ const AdminView = () => {
       return;
     }
 
-    const res = changeAssignedRoute(busId, newRouteId);
-    if (res && res.error) {
-      setAssignmentError(res.error);
+    const res = await changeAssignedRoute(busId, newRouteId);
+    if (!res.success) {
+      setAssignmentError(res.error || 'Failed to change route.');
       return;
     }
     setChangeRouteModalOpen(false);
@@ -834,9 +776,13 @@ const AdminView = () => {
     setUnassignConfirmModalOpen(true);
   };
 
-  const handleConfirmUnassignBus = () => {
+  const handleConfirmUnassignBus = async () => {
     if (!selectedAssignmentBus) return;
-    unassignBus(selectedAssignmentBus.id || selectedAssignmentBus.BusID);
+    const res = await unassignBus(selectedAssignmentBus.id || selectedAssignmentBus.BusID);
+    if (res && res.success === false) {
+      alert(res.error || 'Failed to unassign bus.');
+      return;
+    }
     setUnassignConfirmModalOpen(false);
     setSelectedAssignmentBus(null);
   };
@@ -844,7 +790,7 @@ const AdminView = () => {
   /**
    * ROUTE & STOPS ACTION HANDLERS
    */
-  const handleCreateRoute = (e) => {
+  const handleCreateRoute = async (e) => {
     e.preventDefault();
     setRouteFormErrors('');
 
@@ -853,43 +799,31 @@ const AdminView = () => {
     const endClean = routeForm.endPoint.trim();
     const customIdClean = (routeForm.routeId || '').trim();
 
-    if (!nameClean) {
-      setRouteFormErrors('Route name is required.');
-      return;
-    }
-    if (!startClean || !endClean) {
-      setRouteFormErrors('Start Point and End Point are required.');
+    if (!nameClean || !startClean || !endClean) {
+      setRouteFormErrors('Route Name, Start Point, and End Point are required.');
       return;
     }
 
-    const genId = customIdClean || `route_${Date.now()}`;
+    const genId = customIdClean || `R-${Math.floor(10 + Math.random() * 90)}`;
 
-    // Duplicate check
-    if (routes.some((r) => (r.routeId || r.RouteID || r.id) === genId)) {
-      setRouteFormErrors(`A route with ID "${genId}" already exists.`);
-      return;
-    }
-
-    const parsedSchedules = routeForm.schedules.split(',').map((s) => s.trim()).filter(Boolean);
-
-    // Create 2 default baseline stops (Start & End)
-    const initialStops = [
-      { id: `stp_${Date.now()}_1`, StopID: `STP-${Math.floor(100 + Math.random() * 900)}`, name: startClean, sequenceOrder: 1, lat: 24.5714, lng: 73.6974, estimatedTime: '08:00 AM' },
-      { id: `stp_${Date.now()}_2`, StopID: `STP-${Math.floor(100 + Math.random() * 900)}`, name: endClean, sequenceOrder: 2, lat: 24.6030, lng: 73.6910, estimatedTime: '08:35 AM' }
-    ];
-
-    addRoute({
-      id: genId,
-      RouteID: genId,
+    const res = await addRoute({
+      routeCode: genId,
       routeName: nameClean,
       startPoint: startClean,
       endPoint: endClean,
       totalDistance: routeForm.totalDistance || '10 km',
       estimatedDuration: routeForm.estimatedDuration || '25 mins',
       status: routeForm.status || 'Active',
-      schedules: parsedSchedules.length > 0 ? parsedSchedules : ['08:00 AM', '01:00 PM', '05:00 PM'],
-      stops: initialStops
+      stops: [
+        { name: startClean, sequenceOrder: 1, lat: 24.5714, lng: 73.6974, estimatedTime: '08:00 AM' },
+        { name: endClean, sequenceOrder: 2, lat: 24.6030, lng: 73.6910, estimatedTime: '08:35 AM' }
+      ]
     });
+
+    if (!res.success) {
+      setRouteFormErrors(res.error || 'Failed to create route in database.');
+      return;
+    }
 
     setAddRouteModalOpen(false);
     setRouteFormErrors('');
@@ -905,7 +839,7 @@ const AdminView = () => {
     });
   };
 
-  const handleUpdateRoute = (e) => {
+  const handleUpdateRoute = async (e) => {
     e.preventDefault();
     if (!editingRouteId) return;
     setRouteFormErrors('');
@@ -919,25 +853,27 @@ const AdminView = () => {
       return;
     }
 
-    const parsedSchedules = routeForm.schedules.split(',').map((s) => s.trim()).filter(Boolean);
-
-    updateRoute(editingRouteId, {
+    const res = await updateRoute(editingRouteId, {
       routeName: nameClean,
       startPoint: startClean,
       endPoint: endClean,
       totalDistance: routeForm.totalDistance,
       estimatedDuration: routeForm.estimatedDuration,
       status: routeForm.status,
-      schedules: parsedSchedules.length > 0 ? parsedSchedules : ['08:00 AM', '01:00 PM', '05:00 PM']
     });
+
+    if (!res.success) {
+      setRouteFormErrors(res.error || 'Failed to update route.');
+      return;
+    }
 
     setEditRouteModalOpen(false);
     setEditingRouteId(null);
     setRouteFormErrors('');
   };
 
-  const handleQuickRouteStatusChange = (routeId, newStatus) => {
-    updateRoute(routeId, { status: newStatus });
+  const handleQuickRouteStatusChange = async (routeId, newStatus) => {
+    await updateRoute(routeId, { status: newStatus });
   };
 
   const handleOpenRouteDetail = (route) => {
@@ -958,16 +894,20 @@ const AdminView = () => {
     setDeleteRouteModalOpen(true);
   };
 
-  const handleConfirmDeleteRoute = () => {
+  const handleConfirmDeleteRoute = async () => {
     if (!routeToDelete) return;
-    deleteRoute(routeToDelete.id || routeToDelete.RouteID);
+    const res = await deleteRoute(routeToDelete.id || routeToDelete.RouteID);
+    if (!res.success) {
+      alert(res.error || 'Failed to delete route.');
+      return;
+    }
     setDeleteRouteModalOpen(false);
     if (selectedRouteForDetail?.id === routeToDelete.id) setRouteDetailsModalOpen(false);
     if (selectedRouteForStops?.id === routeToDelete.id) setManageStopsModalOpen(false);
     setRouteToDelete(null);
   };
 
-  const handleAddStopSubmit = (e) => {
+  const handleAddStopSubmit = async (e) => {
     e.preventDefault();
     if (!selectedRouteForStops) return;
     setStopFormErrors('');
@@ -987,7 +927,6 @@ const AdminView = () => {
 
     const targetRouteId = selectedRouteForStops.id || selectedRouteForStops.RouteID;
     const newStopPayload = {
-      StopID: stopForm.stopId || `STP-${Math.floor(100 + Math.random() * 900)}`,
       name: stopNameClean,
       sequence: parseInt(stopForm.sequence) || ((selectedRouteForStops.stops?.length || 0) + 1),
       lat: latNum,
@@ -995,13 +934,14 @@ const AdminView = () => {
       estimatedTime: stopForm.estimatedTime || '08:30 AM'
     };
 
-    addStopToRoute(targetRouteId, newStopPayload);
+    const res = await addStopToRoute(targetRouteId, newStopPayload);
+    if (!res.success) {
+      setStopFormErrors(res.error || 'Failed to add stop to route.');
+      return;
+    }
 
-    // Refresh modal reference
-    setTimeout(() => {
-      const refreshed = routes.find((r) => r.id === targetRouteId || r.RouteID === targetRouteId);
-      if (refreshed) setSelectedRouteForStops(refreshed);
-    }, 50);
+    const refreshed = routes.find((r) => r.id === targetRouteId || r.RouteID === targetRouteId);
+    if (refreshed) setSelectedRouteForStops(refreshed);
 
     setAddStopInlineOpen(false);
     setStopForm({
@@ -1014,7 +954,7 @@ const AdminView = () => {
     });
   };
 
-  const handleUpdateStopSubmit = (e) => {
+  const handleUpdateStopSubmit = async (e) => {
     e.preventDefault();
     if (!selectedRouteForStops || !editingStopId) return;
     setStopFormErrors('');
@@ -1026,41 +966,94 @@ const AdminView = () => {
     }
 
     const targetRouteId = selectedRouteForStops.id || selectedRouteForStops.RouteID;
-    updateStopInRoute(targetRouteId, editingStopId, {
+    const res = await updateStopInRoute(targetRouteId, editingStopId, {
       name: stopNameClean,
       lat: parseFloat(stopForm.lat) || 24.5850,
       lng: parseFloat(stopForm.lng) || 73.6900,
       estimatedTime: stopForm.estimatedTime
     });
 
-    setTimeout(() => {
-      const refreshed = routes.find((r) => r.id === targetRouteId || r.RouteID === targetRouteId);
-      if (refreshed) setSelectedRouteForStops(refreshed);
-    }, 50);
+    if (!res.success) {
+      setStopFormErrors(res.error || 'Failed to update stop.');
+      return;
+    }
+
+    const refreshed = routes.find((r) => r.id === targetRouteId || r.RouteID === targetRouteId);
+    if (refreshed) setSelectedRouteForStops(refreshed);
 
     setEditingStopId(null);
   };
 
-  const handleDeleteStopAction = (stopId) => {
+  const handleDeleteStopAction = async (stopId) => {
     if (!selectedRouteForStops) return;
     const targetRouteId = selectedRouteForStops.id || selectedRouteForStops.RouteID;
-    deleteStopFromRoute(targetRouteId, stopId);
-
-    setTimeout(() => {
-      const refreshed = routes.find((r) => r.id === targetRouteId || r.RouteID === targetRouteId);
-      if (refreshed) setSelectedRouteForStops(refreshed);
-    }, 50);
+    const res = await deleteStopFromRoute(targetRouteId, stopId);
+    if (!res.success) {
+      alert(res.error || 'Failed to delete stop.');
+      return;
+    }
+    const refreshed = routes.find((r) => r.id === targetRouteId || r.RouteID === targetRouteId);
+    if (refreshed) setSelectedRouteForStops(refreshed);
   };
 
-  const handleMoveStopAction = (stopId, direction) => {
+  const handleMoveStopAction = async (stopId, direction) => {
     if (!selectedRouteForStops) return;
     const targetRouteId = selectedRouteForStops.id || selectedRouteForStops.RouteID;
-    moveStopOrder(targetRouteId, stopId, direction);
+    await moveStopOrder(targetRouteId, stopId, direction);
+    const refreshed = routes.find((r) => r.id === targetRouteId || r.RouteID === targetRouteId);
+    if (refreshed) setSelectedRouteForStops(refreshed);
+  };
 
-    setTimeout(() => {
-      const refreshed = routes.find((r) => r.id === targetRouteId || r.RouteID === targetRouteId);
-      if (refreshed) setSelectedRouteForStops(refreshed);
-    }, 50);
+  const handleCreateNoticeSubmit = async (e) => {
+    e.preventDefault();
+    setNoticeFormErrors('');
+    if (!noticeForm.title.trim() || !noticeForm.message.trim()) {
+      setNoticeFormErrors('Title and Message content are required.');
+      return;
+    }
+
+    const res = await publishNotice(noticeForm);
+    if (!res.success) {
+      setNoticeFormErrors(res.error || 'Failed to publish notice.');
+      return;
+    }
+
+    setBroadcastModalOpen(false);
+    setNoticeModalOpen(false);
+    setNoticeFormErrors('');
+    setNoticeForm({ title: '', message: '', type: 'General Announcement', target: 'All Students' });
+  };
+
+  const handleUpdateNoticeSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingNoticeId) return;
+    setNoticeFormErrors('');
+    if (!noticeForm.title.trim() || !noticeForm.message.trim()) {
+      setNoticeFormErrors('Title and Message content are required.');
+      return;
+    }
+
+    const res = await updateNotice(editingNoticeId, noticeForm);
+    if (!res.success) {
+      setNoticeFormErrors(res.error || 'Failed to update notice.');
+      return;
+    }
+
+    setNoticeModalOpen(false);
+    setEditingNoticeId(null);
+    setNoticeFormErrors('');
+    setNoticeForm({ title: '', message: '', type: 'General Announcement', target: 'All Students' });
+  };
+
+  const handleConfirmDeleteNotice = async () => {
+    if (!noticeToDelete) return;
+    const res = await deleteNotice(noticeToDelete.id);
+    if (!res.success) {
+      alert(res.error || 'Failed to delete notice.');
+      return;
+    }
+    setDeleteNoticeModalOpen(false);
+    setNoticeToDelete(null);
   };
 
   return (
@@ -1133,6 +1126,35 @@ const AdminView = () => {
       {/* MAIN VIEW */}
       <div className="flex-1 space-y-6 overflow-hidden">
         
+        {/* API Data Loading Indicator */}
+        {isDataLoading && (
+          <div className="bg-blue-50 border border-blue-200 p-3.5 rounded-2xl flex items-center justify-between text-xs text-blue-800 font-bold">
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              <span>Synchronizing latest fleet data from MySQL database server...</span>
+            </div>
+          </div>
+        )}
+
+        {/* API Data Load Error Alert */}
+        {dataLoadError && (
+          <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl flex items-center justify-between text-xs text-rose-800 font-bold">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+              <div>
+                <strong className="block text-rose-900 font-black">Backend API Connection Issue</strong>
+                <span>{dataLoadError}</span>
+              </div>
+            </div>
+            <button
+              onClick={refreshAdminData}
+              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all"
+            >
+              Retry Sync
+            </button>
+          </div>
+        )}
+
         {/* TAB: DASHBOARD */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
@@ -3055,6 +3077,92 @@ const AdminView = () => {
             </div>
           );
         })()}
+
+        {/* TAB: ALERTS & NOTICES */}
+        {activeTab === 'notices' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">Communication Center</span>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">System Announcements & Notices</h2>
+                <p className="text-xs text-slate-500 mt-1">Broadcast official transit alerts and notices directly to student & driver dashboards stored in MySQL</p>
+              </div>
+              <button
+                onClick={() => {
+                  setNoticeForm({ title: '', message: '', type: 'General Announcement', target: 'All Students' });
+                  setEditingNoticeId(null);
+                  setNoticeFormErrors('');
+                  setBroadcastModalOpen(true);
+                }}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center space-x-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create New Notice</span>
+              </button>
+            </div>
+
+            {/* Notice Cards List */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {notices.length === 0 ? (
+                <div className="col-span-2 bg-white p-8 rounded-2xl border border-slate-200 text-center text-slate-400 font-medium text-xs">
+                  No active announcements published yet. Click "Create New Notice" to broadcast.
+                </div>
+              ) : (
+                notices.map((n) => (
+                  <div key={n.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-start">
+                        <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-lg uppercase tracking-wider border border-blue-100">
+                          {n.type || 'Announcement'}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {n.timestamp || n.createdAt ? new Date(n.createdAt || n.timestamp).toLocaleDateString() : 'Active'}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-slate-900 text-sm leading-snug">{n.title}</h3>
+                      <p className="text-xs text-slate-600 leading-relaxed">{n.message}</p>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex justify-between items-center text-xs">
+                      <span className="text-[11px] text-slate-400 font-semibold">
+                        Target: <strong className="text-slate-700">{n.target || 'All Users'}</strong>
+                      </span>
+                      <div className="flex space-x-1">
+                        <button
+                          onClick={() => {
+                            setNoticeForm({
+                              title: n.title || '',
+                              message: n.message || '',
+                              type: n.type || 'General Announcement',
+                              target: n.target || 'All Students',
+                            });
+                            setEditingNoticeId(n.id);
+                            setNoticeFormErrors('');
+                            setNoticeModalOpen(true);
+                          }}
+                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold"
+                          title="Edit Notice"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setNoticeToDelete(n);
+                            setDeleteNoticeModalOpen(true);
+                          }}
+                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold"
+                          title="Delete Notice"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         {/* TAB: DATABASE TABLES EXPLORER */}
         {activeTab === 'schema' && (
@@ -5470,6 +5578,125 @@ const AdminView = () => {
               Mark as Resolved & Publish Response
             </button>
           </form>
+        )}
+      </Modal>
+
+      {/* BROADCAST / ADD & EDIT NOTICE MODAL */}
+      <Modal
+        isOpen={broadcastModalOpen || noticeModalOpen}
+        onClose={() => {
+          setBroadcastModalOpen(false);
+          setNoticeModalOpen(false);
+          setEditingNoticeId(null);
+          setNoticeFormErrors('');
+        }}
+        title={editingNoticeId ? 'Edit Announcement' : 'Broadcast System Announcement'}
+      >
+        <form onSubmit={editingNoticeId ? handleUpdateNoticeSubmit : handleCreateNoticeSubmit} className="space-y-4 text-xs">
+          {noticeFormErrors && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 font-bold rounded-xl flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{noticeFormErrors}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">Notice Title *</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Route 04 Morning Schedule Revision"
+              value={noticeForm.title}
+              onChange={(e) => setNoticeForm({ ...noticeForm, title: e.target.value })}
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-slate-700 block mb-1">Category / Type</label>
+              <select
+                value={noticeForm.type}
+                onChange={(e) => setNoticeForm({ ...noticeForm, type: e.target.value })}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="General Announcement">General Announcement</option>
+                <option value="Route Change">Route Change</option>
+                <option value="Schedule Advisory">Schedule Advisory</option>
+                <option value="Maintenance Alert">Maintenance Alert</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-bold text-slate-700 block mb-1">Target Audience</label>
+              <select
+                value={noticeForm.target}
+                onChange={(e) => setNoticeForm({ ...noticeForm, target: e.target.value })}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="All Students">All Students</option>
+                <option value="All Drivers">All Drivers</option>
+                <option value="All Users">All Users & Staff</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">Notice Content / Message Body *</label>
+            <textarea
+              required
+              rows={4}
+              placeholder="Type announcement message details to broadcast to connected user dashboards..."
+              value={noticeForm.message}
+              onChange={(e) => setNoticeForm({ ...noticeForm, message: e.target.value })}
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            ></textarea>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-lg transition-all active:scale-98 mt-2"
+          >
+            {editingNoticeId ? 'Save Notice Changes' : 'Broadcast & Save Notice'}
+          </button>
+        </form>
+      </Modal>
+
+      {/* DELETE NOTICE CONFIRMATION MODAL */}
+      <Modal
+        isOpen={deleteNoticeModalOpen}
+        onClose={() => setDeleteNoticeModalOpen(false)}
+        title="Confirm Delete Notice"
+      >
+        {noticeToDelete && (
+          <div className="space-y-4 text-xs">
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl space-y-2">
+              <div className="flex items-center gap-2 text-rose-700 font-bold text-sm">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                <span>Delete Announcement "{noticeToDelete.title}"?</span>
+              </div>
+              <p className="text-slate-600 text-xs">
+                This notice will be permanently deleted from the database.
+              </p>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteNoticeModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteNotice}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-lg transition-all active:scale-95 flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Yes, Delete Notice</span>
+              </button>
+            </div>
+          </div>
         )}
       </Modal>
 

@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
 import Modal from '../../components/Modal';
 import InteractiveMap from '../../components/InteractiveMap';
+import tripApi from '../../services/tripApi';
+import trackingApi from '../../services/trackingApi';
 import {
   Play,
   Square,
@@ -45,24 +47,24 @@ const DriverView = () => {
     startTrip,
     endTrip,
     advanceStop,
-    updatePassengerCount
+    updatePassengerCount,
+    refreshAdminData
   } = useApp();
   const { currentUser, logout } = useAuth();
 
-  // 1. Resolve logged-in Driver Profile
+  const [activeTripId, setActiveTripId] = useState(null);
+
+  // 1. Resolve logged-in Driver Profile strictly matching currentUser identity
   const currentDriverProfile = useMemo(() => {
+    if (!currentUser) return null;
     return (
       drivers.find(
         (d) =>
-          d.id === currentUser?.id ||
-          d.DriverID === currentUser?.id ||
-          d.DriverID === currentUser?.DriverID ||
-          d.driverId === currentUser?.driverId ||
-          d.name?.toLowerCase() === currentUser?.name?.toLowerCase() ||
-          d.email?.toLowerCase() === currentUser?.email?.toLowerCase()
-      ) ||
-      drivers.find((d) => d.Role === 'driver' || d.role === 'driver') ||
-      drivers[0]
+          (d.userId && String(d.userId) === String(currentUser.id)) ||
+          (d.id && String(d.id) === String(currentUser.id)) ||
+          (d.email && d.email.toLowerCase() === currentUser.email?.toLowerCase()) ||
+          (d.driver_email && d.driver_email.toLowerCase() === currentUser.email?.toLowerCase())
+      ) || null
     );
   }, [drivers, currentUser]);
 
@@ -149,25 +151,44 @@ const DriverView = () => {
     setTimeout(() => setToastMessage(''), 3500);
   };
 
-  // EXPLICIT ACTION 1: START TRIP
-  const handleStartTrip = () => {
+  // EXPLICIT ACTION 1: START TRIP (Backend API Connected)
+  const handleStartTrip = async () => {
     if (!assignedBus || !assignedRoute) {
       showToast('Cannot start trip: No vehicle or route assigned by dispatch.', 'error');
       return;
     }
 
-    const nowTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setTripStartTime(nowTimeStr);
-    setElapsedSeconds(0);
+    const busIdClean = parseInt(assignedBus.id || assignedBus.BusID, 10);
+    const routeIdClean = parseInt(assignedRoute.id || assignedRoute.RouteID, 10);
 
-    const busIdClean = assignedBus.id || assignedBus.BusID;
-    const driverIdClean = currentDriverProfile?.id || currentDriverProfile?.DriverID || currentUser?.id;
-    const routeIdClean = assignedRoute.id || assignedRoute.RouteID;
+    try {
+      const response = await tripApi.startTrip({
+        bus_id: busIdClean,
+        route_id: routeIdClean,
+        passenger_count: assignedBus.currentOccupancy || 0,
+      });
 
-    const newTrip = startTrip(busIdClean, driverIdClean, routeIdClean);
-    setLastTripRecord(newTrip);
+      if (response && response.success) {
+        const nowTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setTripStartTime(nowTimeStr);
+        setElapsedSeconds(0);
+        setLastTripRecord(response.data);
+        if (response.data?.id) {
+          setActiveTripId(response.data.id);
+        }
 
-    showToast(`🚀 TRIP STARTED! Live GPS Telemetry Broadcasting on ${assignedBus.busNumber || assignedBus.BusNo}`, 'success');
+        const driverIdClean = currentDriverProfile?.id || currentDriverProfile?.DriverID || currentUser?.id;
+        startTrip(busIdClean, driverIdClean, routeIdClean);
+        await refreshAdminData();
+
+        showToast(`🚀 TRIP STARTED! Live GPS Telemetry Broadcasting on ${assignedBus.busNumber || assignedBus.BusNo}`, 'success');
+      } else {
+        showToast(response?.message || 'Trip start failed.', 'error');
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to start trip on server.';
+      showToast(`❌ ${errMsg}`, 'error');
+    }
   };
 
   // EXPLICIT ACTION 2: OPEN END TRIP CONFIRMATION
@@ -175,32 +196,56 @@ const DriverView = () => {
     setEndTripModalOpen(true);
   };
 
-  // EXPLICIT ACTION 3: CONFIRM & COMPLETE TRIP
-  const handleConfirmEndTrip = () => {
+  // EXPLICIT ACTION 3: CONFIRM & COMPLETE TRIP (Backend API Connected)
+  const handleConfirmEndTrip = async () => {
     if (!assignedBus) return;
-    const busIdClean = assignedBus.id || assignedBus.BusID;
+    const busIdClean = parseInt(assignedBus.id || assignedBus.BusID, 10);
     const nowTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const formattedDuration = formatTimer(elapsedSeconds);
 
-    endTrip(busIdClean);
+    const activeTripInState = trips.find(
+      (t) => (t.busId === busIdClean || t.bus_id === busIdClean) && t.status === 'In Transit'
+    );
+    const targetTripId = activeTripId || activeTripInState?.id || activeTripInState?.tripId;
 
-    const completedRecord = {
-      busNumber: assignedBus.busNumber || assignedBus.BusNo,
-      driverName: currentDriverProfile?.name || currentUser?.name,
-      routeName: assignedRoute?.routeName || 'Assigned Route',
-      startTime: tripStartTime,
-      endTime: nowTimeStr,
-      duration: formattedDuration,
-      passengersServed: assignedBus.currentOccupancy || 25,
-      totalStops: stops.length,
-      stopsVisited: currentStopIdx + 1,
-    };
+    if (!targetTripId) {
+      showToast('Trip end failed: No active trip ID found.', 'error');
+      setEndTripModalOpen(false);
+      return;
+    }
 
-    setLastTripRecord(completedRecord);
-    setEndTripModalOpen(false);
-    setTripSummaryModalOpen(true);
+    try {
+      const response = await tripApi.endTrip({ trip_id: targetTripId });
 
-    showToast(`🏁 TRIP COMPLETED! Vehicle status set to At Depot and Driver is Available.`, 'success');
+      if (response && response.success) {
+        endTrip(busIdClean);
+        await refreshAdminData();
+
+        const completedRecord = {
+          busNumber: assignedBus.busNumber || assignedBus.BusNo,
+          driverName: currentDriverProfile?.name || currentUser?.name,
+          routeName: assignedRoute?.routeName || 'Assigned Route',
+          startTime: tripStartTime,
+          endTime: nowTimeStr,
+          duration: formattedDuration,
+          passengersServed: assignedBus.currentOccupancy || 25,
+          totalStops: stops.length,
+          stopsVisited: currentStopIdx + 1,
+        };
+
+        setLastTripRecord(completedRecord);
+        setActiveTripId(null);
+        setEndTripModalOpen(false);
+        setTripSummaryModalOpen(true);
+
+        showToast(`🏁 TRIP COMPLETED! Vehicle status set to At Depot and Driver is Available.`, 'success');
+      } else {
+        showToast(response?.message || 'Trip end failed.', 'error');
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to end trip on server.';
+      showToast(`❌ ${errMsg}`, 'error');
+    }
   };
 
   // Advance Stop Progression
