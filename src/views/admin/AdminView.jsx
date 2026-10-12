@@ -315,7 +315,7 @@ const AdminView = () => {
     return drivers.filter((d) => {
       const q = (driverSearchQuery || searchQuery).toLowerCase();
       const dName = (d.name || d.Name || '').toLowerCase();
-      const dId = (d.driverId || d.DriverID || d.id || '').toLowerCase();
+      const dId = String(d.driverId || d.DriverID || d.id || '').toLowerCase();
       const dPhone = (d.phone || d.Contact || '').toLowerCase();
       const dLicense = (d.licenseNumber || '').toLowerCase();
       const dBus = (d.assignedBusNumber || '').toLowerCase();
@@ -1058,7 +1058,7 @@ const AdminView = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row gap-6 pb-24 md:pb-8">
-      
+
       {/* SECTION 17: ADMIN SIDEBAR */}
       <aside className="w-full md:w-64 shrink-0 space-y-1">
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs mb-4">
@@ -1088,11 +1088,10 @@ const AdminView = () => {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-all ${
-                  isActive
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-all ${isActive
                     ? 'bg-blue-600 text-white font-bold shadow-xs'
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`}
+                  }`}
               >
                 <div className="flex items-center space-x-2.5">
                   <Icon className="w-4 h-4" />
@@ -1100,9 +1099,8 @@ const AdminView = () => {
                 </div>
                 {item.badge !== undefined && item.badge > 0 && (
                   <span
-                    className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-                    }`}
+                    className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                      }`}
                   >
                     {item.badge}
                   </span>
@@ -1125,7 +1123,7 @@ const AdminView = () => {
 
       {/* MAIN VIEW */}
       <div className="flex-1 space-y-6 overflow-hidden">
-        
+
         {/* API Data Loading Indicator */}
         {isDataLoading && (
           <div className="bg-blue-50 border border-blue-200 p-3.5 rounded-2xl flex items-center justify-between text-xs text-blue-800 font-bold">
@@ -1345,13 +1343,12 @@ const AdminView = () => {
                         <button
                           key={b.id || b.BusID}
                           onClick={() => setSelectedBus(b)}
-                          className={`px-3 py-1 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
-                            isSelected
+                          className={`px-3 py-1 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${isSelected
                               ? 'bg-blue-600 text-white shadow-xs'
                               : isLive
-                              ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                          }`}
+                                ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
                         >
                           <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
                           <span>{b.busNumber}</span>
@@ -1450,11 +1447,10 @@ const AdminView = () => {
                         <button
                           key={tab.id}
                           onClick={() => setLiveStatusFilter(tab.id)}
-                          className={`px-3 py-1.5 rounded-lg transition-all ${
-                            liveStatusFilter === tab.id
+                          className={`px-3 py-1.5 rounded-lg transition-all ${liveStatusFilter === tab.id
                               ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
                               : 'text-slate-600 hover:text-slate-900'
-                          }`}
+                            }`}
                         >
                           {tab.label}
                         </button>
@@ -1514,9 +1510,8 @@ const AdminView = () => {
                             <tr
                               key={b.id || b.BusID}
                               onClick={() => setSelectedBus(b)}
-                              className={`cursor-pointer transition-colors ${
-                                isSelected ? 'bg-blue-50/70 ring-1 ring-blue-500/30' : 'hover:bg-slate-50/80'
-                              }`}
+                              className={`cursor-pointer transition-colors ${isSelected ? 'bg-blue-50/70 ring-1 ring-blue-500/30' : 'hover:bg-slate-50/80'
+                                }`}
                             >
                               {/* 1. Bus */}
                               <td className="p-3.5">
@@ -1613,11 +1608,10 @@ const AdminView = () => {
                                     setSelectedBus(b);
                                     window.scrollTo({ top: 0, behavior: 'smooth' });
                                   }}
-                                  className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                                    isSelected
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${isSelected
                                       ? 'bg-blue-600 text-white shadow-xs'
                                       : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                                  }`}
+                                    }`}
                                 >
                                   {isSelected ? 'Tracking' : 'Focus Map'}
                                 </button>
@@ -1715,16 +1709,14 @@ const AdminView = () => {
                   <button
                     key={tab.id}
                     onClick={() => setStatusFilter(tab.id)}
-                    className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
-                      statusFilter === tab.id
+                    className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${statusFilter === tab.id
                         ? 'bg-blue-600 text-white shadow'
                         : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     <span>{tab.label}</span>
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                      statusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
-                    }`}>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${statusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}>
                       {tab.count}
                     </span>
                   </button>
@@ -1848,13 +1840,12 @@ const AdminView = () => {
                             <select
                               value={bus.status}
                               onChange={(e) => handleQuickStatusChange(bus.id || bus.BusID, e.target.value)}
-                              className={`text-xs font-bold px-2.5 py-1 rounded-xl border cursor-pointer focus:outline-none transition-all ${
-                                bus.status === 'In Transit' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
-                                bus.status === 'At Depot' ? 'bg-blue-50 text-blue-700 border-blue-300' :
-                                bus.status === 'Delayed' ? 'bg-amber-50 text-amber-700 border-amber-300' :
-                                bus.status === 'Maintenance' ? 'bg-rose-50 text-rose-700 border-rose-300' :
-                                'bg-slate-100 text-slate-600 border-slate-300'
-                              }`}
+                              className={`text-xs font-bold px-2.5 py-1 rounded-xl border cursor-pointer focus:outline-none transition-all ${bus.status === 'In Transit' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                                  bus.status === 'At Depot' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                                    bus.status === 'Delayed' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                                      bus.status === 'Maintenance' ? 'bg-rose-50 text-rose-700 border-rose-300' :
+                                        'bg-slate-100 text-slate-600 border-slate-300'
+                                }`}
                             >
                               <option value="At Depot">At Depot</option>
                               <option value="In Transit">In Transit</option>
@@ -2013,16 +2004,14 @@ const AdminView = () => {
                   <button
                     key={tab.id}
                     onClick={() => setDriverStatusFilter(tab.id)}
-                    className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
-                      driverStatusFilter === tab.id
+                    className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${driverStatusFilter === tab.id
                         ? 'bg-blue-600 text-white shadow'
                         : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     <span>{tab.label}</span>
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                      driverStatusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
-                    }`}>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${driverStatusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}>
                       {tab.count}
                     </span>
                   </button>
@@ -2133,12 +2122,11 @@ const AdminView = () => {
                             <select
                               value={drv.status}
                               onChange={(e) => handleQuickDriverStatusChange(drv.id || drv.DriverID, e.target.value)}
-                              className={`text-xs font-bold px-2.5 py-1 rounded-xl border cursor-pointer focus:outline-none transition-all ${
-                                drv.status === 'On Trip' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
-                                drv.status === 'Available' ? 'bg-blue-50 text-blue-700 border-blue-300' :
-                                drv.status === 'Off Duty' ? 'bg-amber-50 text-amber-700 border-amber-300' :
-                                'bg-rose-50 text-rose-700 border-rose-300'
-                              }`}
+                              className={`text-xs font-bold px-2.5 py-1 rounded-xl border cursor-pointer focus:outline-none transition-all ${drv.status === 'On Trip' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                                  drv.status === 'Available' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                                    drv.status === 'Off Duty' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                                      'bg-rose-50 text-rose-700 border-rose-300'
+                                }`}
                             >
                               <option value="Available">Available</option>
                               <option value="On Trip">On Trip</option>
@@ -2298,16 +2286,14 @@ const AdminView = () => {
                   <button
                     key={tab.id}
                     onClick={() => setRouteStatusFilter(tab.id)}
-                    className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
-                      routeStatusFilter === tab.id
+                    className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${routeStatusFilter === tab.id
                         ? 'bg-blue-600 text-white shadow'
                         : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     <span>{tab.label}</span>
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                      routeStatusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
-                    }`}>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${routeStatusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}>
                       {tab.count}
                     </span>
                   </button>
@@ -2427,9 +2413,8 @@ const AdminView = () => {
                             <select
                               value={route.status || 'Active'}
                               onChange={(e) => handleQuickRouteStatusChange(rId, e.target.value)}
-                              className={`text-xs font-bold px-2.5 py-1 rounded-xl border cursor-pointer focus:outline-none transition-all ${
-                                route.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-slate-100 text-slate-600 border-slate-300'
-                              }`}
+                              className={`text-xs font-bold px-2.5 py-1 rounded-xl border cursor-pointer focus:outline-none transition-all ${route.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-slate-100 text-slate-600 border-slate-300'
+                                }`}
                             >
                               <option value="Active">Active</option>
                               <option value="Inactive">Inactive</option>
@@ -2573,16 +2558,14 @@ const AdminView = () => {
                   <button
                     key={tab.id}
                     onClick={() => setAssignmentStatusFilter(tab.id)}
-                    className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
-                      assignmentStatusFilter === tab.id
+                    className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${assignmentStatusFilter === tab.id
                         ? 'bg-indigo-600 text-white shadow'
                         : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     <span>{tab.label}</span>
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                      assignmentStatusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
-                    }`}>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${assignmentStatusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                      }`}>
                       {tab.count}
                     </span>
                   </button>
@@ -2633,9 +2616,8 @@ const AdminView = () => {
                   return (
                     <div
                       key={bId}
-                      className={`bg-white rounded-2xl border p-5 shadow-xs transition-all hover:shadow-md ${
-                        isAssigned ? 'border-slate-200' : 'border-dashed border-amber-300 bg-amber-50/20'
-                      }`}
+                      className={`bg-white rounded-2xl border p-5 shadow-xs transition-all hover:shadow-md ${isAssigned ? 'border-slate-200' : 'border-dashed border-amber-300 bg-amber-50/20'
+                        }`}
                     >
                       {/* Top Bar: Relationship Summary & Status Badges */}
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-4 border-b border-slate-100">
@@ -2662,7 +2644,7 @@ const AdminView = () => {
 
                       {/* 3-Pillar Relationship Row: BUS ➔ DRIVER ➔ ROUTE */}
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 my-4 items-center">
-                        
+
                         {/* PILLAR 1: BUS ASSET (4 cols) */}
                         <div className="lg:col-span-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5">
                           <div className="flex justify-between items-center">
@@ -2693,9 +2675,8 @@ const AdminView = () => {
                         </div>
 
                         {/* PILLAR 2: DRIVER PERSONNEL (4 cols) */}
-                        <div className={`lg:col-span-3 p-3.5 rounded-xl border space-y-1.5 ${
-                          linkedDriver ? 'bg-indigo-50/40 border-indigo-200' : 'bg-amber-50/60 border-amber-200'
-                        }`}>
+                        <div className={`lg:col-span-3 p-3.5 rounded-xl border space-y-1.5 ${linkedDriver ? 'bg-indigo-50/40 border-indigo-200' : 'bg-amber-50/60 border-amber-200'
+                          }`}>
                           <div className="flex justify-between items-center">
                             <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 text-indigo-700">
                               <Users className="w-3.5 h-3.5" />
@@ -2739,9 +2720,8 @@ const AdminView = () => {
                         </div>
 
                         {/* PILLAR 3: TRANSIT ROUTE (4 cols) */}
-                        <div className={`lg:col-span-4 p-3.5 rounded-xl border space-y-1.5 ${
-                          linkedRoute ? 'bg-blue-50/40 border-blue-200' : 'bg-amber-50/60 border-amber-200'
-                        }`}>
+                        <div className={`lg:col-span-4 p-3.5 rounded-xl border space-y-1.5 ${linkedRoute ? 'bg-blue-50/40 border-blue-200' : 'bg-amber-50/60 border-amber-200'
+                          }`}>
                           <div className="flex justify-between items-center">
                             <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 text-blue-700">
                               <RouteIcon className="w-3.5 h-3.5" />
@@ -2893,16 +2873,14 @@ const AdminView = () => {
                     <button
                       key={tab.id}
                       onClick={() => setComplaintStatusFilter(tab.id)}
-                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                        complaintStatusFilter === tab.id
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${complaintStatusFilter === tab.id
                           ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
                           : 'text-slate-600 hover:text-slate-900'
-                      }`}
+                        }`}
                     >
                       <span>{tab.label}</span>
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                        complaintStatusFilter === tab.id ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-700'
-                      }`}>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${complaintStatusFilter === tab.id ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-700'
+                        }`}>
                         {tab.count}
                       </span>
                     </button>
@@ -2964,10 +2942,10 @@ const AdminView = () => {
                         filteredComplaints.map((c) => {
                           const categoryColor =
                             c.category === 'Bus Delay' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                            c.category === 'Driver Behaviour' ? 'bg-purple-50 text-purple-800 border-purple-200' :
-                            c.category === 'Bus Condition' ? 'bg-rose-50 text-rose-800 border-rose-200' :
-                            c.category === 'Route Issue' ? 'bg-blue-50 text-blue-800 border-blue-200' :
-                            'bg-slate-100 text-slate-700 border-slate-200';
+                              c.category === 'Driver Behaviour' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                                c.category === 'Bus Condition' ? 'bg-rose-50 text-rose-800 border-rose-200' :
+                                  c.category === 'Route Issue' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                                    'bg-slate-100 text-slate-700 border-slate-200';
 
                           const response = c.adminResponse || c.adminRemark;
 
@@ -3186,9 +3164,8 @@ const AdminView = () => {
                 <button
                   key={tbl.id}
                   onClick={() => setAdminActiveSchemaTable(tbl.id)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                    adminActiveSchemaTable === tbl.id ? 'bg-blue-600 text-white shadow' : 'bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${adminActiveSchemaTable === tbl.id ? 'bg-blue-600 text-white shadow' : 'bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
                 >
                   <div>{tbl.label}</div>
                   <div className={`text-[10px] ${adminActiveSchemaTable === tbl.id ? 'text-blue-100' : 'text-slate-400'}`}>{tbl.fields}</div>
@@ -4855,9 +4832,8 @@ const AdminView = () => {
                             type="button"
                             disabled={isFirst}
                             onClick={() => handleMoveStopAction(sId, 'up')}
-                            className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${
-                              isFirst ? 'text-slate-300 cursor-not-allowed' : 'bg-slate-100 hover:bg-blue-50 text-blue-700'
-                            }`}
+                            className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${isFirst ? 'text-slate-300 cursor-not-allowed' : 'bg-slate-100 hover:bg-blue-50 text-blue-700'
+                              }`}
                             title="Move Stop Up in Sequence"
                           >
                             ⬆️
@@ -4868,9 +4844,8 @@ const AdminView = () => {
                             type="button"
                             disabled={isLast}
                             onClick={() => handleMoveStopAction(sId, 'down')}
-                            className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${
-                              isLast ? 'text-slate-300 cursor-not-allowed' : 'bg-slate-100 hover:bg-blue-50 text-blue-700'
-                            }`}
+                            className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${isLast ? 'text-slate-300 cursor-not-allowed' : 'bg-slate-100 hover:bg-blue-50 text-blue-700'
+                              }`}
                             title="Move Stop Down in Sequence"
                           >
                             ⬇️
@@ -5428,15 +5403,14 @@ const AdminView = () => {
                   ].map((st) => (
                     <label
                       key={st.id}
-                      className={`flex items-center justify-center p-2.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
-                        complaintActionForm.status === st.id
+                      className={`flex items-center justify-center p-2.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${complaintActionForm.status === st.id
                           ? st.id === 'Resolved'
                             ? 'bg-emerald-50 border-emerald-500 text-emerald-800 ring-2 ring-emerald-500/20'
                             : st.id === 'In Progress'
-                            ? 'bg-blue-50 border-blue-500 text-blue-800 ring-2 ring-blue-500/20'
-                            : 'bg-amber-50 border-amber-500 text-amber-800 ring-2 ring-amber-500/20'
+                              ? 'bg-blue-50 border-blue-500 text-blue-800 ring-2 ring-blue-500/20'
+                              : 'bg-amber-50 border-amber-500 text-amber-800 ring-2 ring-amber-500/20'
                           : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
+                        }`}
                     >
                       <input
                         type="radio"
