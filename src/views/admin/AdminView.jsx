@@ -331,7 +331,7 @@ const AdminView = () => {
     return routes.filter((r) => {
       const q = (routeSearchQuery || searchQuery).toLowerCase();
       const rName = (r.routeName || r.RouteName || r.name || '').toLowerCase();
-      const rId = (r.routeId || r.RouteID || r.id || '').toLowerCase();
+      const rId = String(r.routeId || r.RouteID || r.id || '').toLowerCase();
       const sPoint = (r.startPoint || r.StartPoint || '').toLowerCase();
       const ePoint = (r.endPoint || r.EndPoint || r.destination || '').toLowerCase();
       const stopMatches = (r.stops || []).some((s) => (s.name || s.StopName || '').toLowerCase().includes(q));
@@ -1089,8 +1089,8 @@ const AdminView = () => {
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-all ${isActive
-                    ? 'bg-blue-600 text-white font-bold shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  ? 'bg-blue-600 text-white font-bold shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}
               >
                 <div className="flex items-center space-x-2.5">
@@ -1344,10 +1344,10 @@ const AdminView = () => {
                           key={b.id || b.BusID}
                           onClick={() => setSelectedBus(b)}
                           className={`px-3 py-1 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${isSelected
-                              ? 'bg-blue-600 text-white shadow-xs'
-                              : isLive
-                                ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : isLive
+                              ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
                         >
                           <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
@@ -1448,8 +1448,8 @@ const AdminView = () => {
                           key={tab.id}
                           onClick={() => setLiveStatusFilter(tab.id)}
                           className={`px-3 py-1.5 rounded-lg transition-all ${liveStatusFilter === tab.id
-                              ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
-                              : 'text-slate-600 hover:text-slate-900'
+                            ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
+                            : 'text-slate-600 hover:text-slate-900'
                             }`}
                         >
                           {tab.label}
@@ -1609,8 +1609,8 @@ const AdminView = () => {
                                     window.scrollTo({ top: 0, behavior: 'smooth' });
                                   }}
                                   className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${isSelected
-                                      ? 'bg-blue-600 text-white shadow-xs'
-                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                    ? 'bg-blue-600 text-white shadow-xs'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                                     }`}
                                 >
                                   {isSelected ? 'Tracking' : 'Focus Map'}
@@ -1710,8 +1710,8 @@ const AdminView = () => {
                     key={tab.id}
                     onClick={() => setStatusFilter(tab.id)}
                     className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${statusFilter === tab.id
-                        ? 'bg-blue-600 text-white shadow'
-                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                      ? 'bg-blue-600 text-white shadow'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     <span>{tab.label}</span>
@@ -1841,10 +1841,10 @@ const AdminView = () => {
                               value={bus.status}
                               onChange={(e) => handleQuickStatusChange(bus.id || bus.BusID, e.target.value)}
                               className={`text-xs font-bold px-2.5 py-1 rounded-xl border cursor-pointer focus:outline-none transition-all ${bus.status === 'In Transit' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
-                                  bus.status === 'At Depot' ? 'bg-blue-50 text-blue-700 border-blue-300' :
-                                    bus.status === 'Delayed' ? 'bg-amber-50 text-amber-700 border-amber-300' :
-                                      bus.status === 'Maintenance' ? 'bg-rose-50 text-rose-700 border-rose-300' :
-                                        'bg-slate-100 text-slate-600 border-slate-300'
+                                bus.status === 'At Depot' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                                  bus.status === 'Delayed' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                                    bus.status === 'Maintenance' ? 'bg-rose-50 text-rose-700 border-rose-300' :
+                                      'bg-slate-100 text-slate-600 border-slate-300'
                                 }`}
                             >
                               <option value="At Depot">At Depot</option>
@@ -2005,8 +2005,8 @@ const AdminView = () => {
                     key={tab.id}
                     onClick={() => setDriverStatusFilter(tab.id)}
                     className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${driverStatusFilter === tab.id
-                        ? 'bg-blue-600 text-white shadow'
-                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                      ? 'bg-blue-600 text-white shadow'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     <span>{tab.label}</span>
@@ -2123,9 +2123,9 @@ const AdminView = () => {
                               value={drv.status}
                               onChange={(e) => handleQuickDriverStatusChange(drv.id || drv.DriverID, e.target.value)}
                               className={`text-xs font-bold px-2.5 py-1 rounded-xl border cursor-pointer focus:outline-none transition-all ${drv.status === 'On Trip' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
-                                  drv.status === 'Available' ? 'bg-blue-50 text-blue-700 border-blue-300' :
-                                    drv.status === 'Off Duty' ? 'bg-amber-50 text-amber-700 border-amber-300' :
-                                      'bg-rose-50 text-rose-700 border-rose-300'
+                                drv.status === 'Available' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                                  drv.status === 'Off Duty' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                                    'bg-rose-50 text-rose-700 border-rose-300'
                                 }`}
                             >
                               <option value="Available">Available</option>
@@ -2287,8 +2287,8 @@ const AdminView = () => {
                     key={tab.id}
                     onClick={() => setRouteStatusFilter(tab.id)}
                     className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${routeStatusFilter === tab.id
-                        ? 'bg-blue-600 text-white shadow'
-                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                      ? 'bg-blue-600 text-white shadow'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     <span>{tab.label}</span>
@@ -2559,8 +2559,8 @@ const AdminView = () => {
                     key={tab.id}
                     onClick={() => setAssignmentStatusFilter(tab.id)}
                     className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${assignmentStatusFilter === tab.id
-                        ? 'bg-indigo-600 text-white shadow'
-                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     <span>{tab.label}</span>
@@ -2874,8 +2874,8 @@ const AdminView = () => {
                       key={tab.id}
                       onClick={() => setComplaintStatusFilter(tab.id)}
                       className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${complaintStatusFilter === tab.id
-                          ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
-                          : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
+                        : 'text-slate-600 hover:text-slate-900'
                         }`}
                     >
                       <span>{tab.label}</span>
@@ -5404,12 +5404,12 @@ const AdminView = () => {
                     <label
                       key={st.id}
                       className={`flex items-center justify-center p-2.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${complaintActionForm.status === st.id
-                          ? st.id === 'Resolved'
-                            ? 'bg-emerald-50 border-emerald-500 text-emerald-800 ring-2 ring-emerald-500/20'
-                            : st.id === 'In Progress'
-                              ? 'bg-blue-50 border-blue-500 text-blue-800 ring-2 ring-blue-500/20'
-                              : 'bg-amber-50 border-amber-500 text-amber-800 ring-2 ring-amber-500/20'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        ? st.id === 'Resolved'
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-800 ring-2 ring-emerald-500/20'
+                          : st.id === 'In Progress'
+                            ? 'bg-blue-50 border-blue-500 text-blue-800 ring-2 ring-blue-500/20'
+                            : 'bg-amber-50 border-amber-500 text-amber-800 ring-2 ring-amber-500/20'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                         }`}
                     >
                       <input
