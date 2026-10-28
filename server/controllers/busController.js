@@ -1,8 +1,46 @@
 import pool from '../config/db.js';
-import { inMemoryBuses } from '../config/inMemoryStore.js';
+import { inMemoryBuses, inMemoryDrivers, inMemoryRoutes } from '../config/inMemoryStore.js';
 
 let nextBusId = 10;
 const VALID_STATUSES = ['At Depot', 'In Transit', 'Delayed', 'Maintenance', 'Completed'];
+
+export const BUS_JOIN_SQL = `
+  SELECT 
+    b.id,
+    b.bus_number,
+    b.registration_number,
+    b.model,
+    b.capacity,
+    b.current_occupancy,
+    b.fuel_type,
+    b.status,
+    b.created_at,
+    b.updated_at,
+    d.id AS assigned_driver_id,
+    u.name AS driver_name,
+    d.assigned_route_id,
+    r.name AS route_name,
+    d.shift
+  FROM buses b
+  LEFT JOIN drivers d ON d.assigned_bus_id = b.id
+  LEFT JOIN users u ON d.user_id = u.id
+  LEFT JOIN routes r ON d.assigned_route_id = r.id
+`;
+
+export const enrichInMemoryBus = (b) => {
+  const driver = inMemoryDrivers.find((d) => d.assigned_bus_id === b.id);
+  const route = driver && driver.assigned_route_id
+    ? inMemoryRoutes.find((r) => r.id === driver.assigned_route_id)
+    : null;
+  return {
+    ...b,
+    assigned_driver_id: driver ? driver.id : null,
+    driver_name: driver ? (driver.driver_name || 'Driver') : 'Unassigned',
+    assigned_route_id: driver ? driver.assigned_route_id : null,
+    route_name: route ? route.name : (driver?.route_name || 'Unassigned'),
+    shift: driver ? (driver.shift || 'Morning') : 'Morning',
+  };
+};
 
 /**
  * @route   GET /api/buses
@@ -12,7 +50,7 @@ const VALID_STATUSES = ['At Depot', 'In Transit', 'Delayed', 'Maintenance', 'Com
 export const getAllBuses = async (req, res, next) => {
   try {
     try {
-      const [rows] = await pool.query('SELECT * FROM buses ORDER BY id ASC');
+      const [rows] = await pool.query(`${BUS_JOIN_SQL} ORDER BY b.id ASC`);
       return res.status(200).json({
         success: true,
         data: rows,
@@ -20,7 +58,7 @@ export const getAllBuses = async (req, res, next) => {
     } catch (dbErr) {
       return res.status(200).json({
         success: true,
-        data: inMemoryBuses,
+        data: inMemoryBuses.map(enrichInMemoryBus),
       });
     }
   } catch (error) {
@@ -44,7 +82,7 @@ export const getBusById = async (req, res, next) => {
     }
 
     try {
-      const [rows] = await pool.query('SELECT * FROM buses WHERE id = ?', [busId]);
+      const [rows] = await pool.query(`${BUS_JOIN_SQL} WHERE b.id = ?`, [busId]);
       if (rows.length === 0) {
         return res.status(404).json({
           success: false,
@@ -65,7 +103,7 @@ export const getBusById = async (req, res, next) => {
       }
       return res.status(200).json({
         success: true,
-        data: bus,
+        data: enrichInMemoryBus(bus),
       });
     }
   } catch (error) {
@@ -315,7 +353,7 @@ export const updateBus = async (req, res, next) => {
          WHERE id = ?`,
         [updatedBusNumber, updatedRegNumber, updatedModel, updatedCapacity, updatedOccupancy, updatedFuelType, updatedStatus, busId]
       );
-      const [updatedRows] = await pool.query('SELECT * FROM buses WHERE id = ?', [busId]);
+      const [updatedRows] = await pool.query(`${BUS_JOIN_SQL} WHERE b.id = ?`, [busId]);
       return res.status(200).json({
         success: true,
         message: 'Bus updated successfully.',
@@ -333,7 +371,7 @@ export const updateBus = async (req, res, next) => {
       return res.status(200).json({
         success: true,
         message: 'Bus updated successfully.',
-        data: existingBus,
+        data: enrichInMemoryBus(existingBus),
       });
     }
   } catch (error) {

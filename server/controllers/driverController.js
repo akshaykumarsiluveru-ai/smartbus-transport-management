@@ -1,11 +1,11 @@
 import pool from '../config/db.js';
 import bcrypt from 'bcryptjs';
-import { inMemoryDrivers } from '../config/inMemoryStore.js';
+import { inMemoryDrivers, inMemoryBuses, inMemoryRoutes } from '../config/inMemoryStore.js';
 
 let nextDriverId = 10;
 const VALID_DRIVER_STATUSES = ['Available', 'On Trip', 'On Leave', 'Off Duty'];
 
-const DRIVER_JOIN_SQL = `
+export const DRIVER_JOIN_SQL = `
   SELECT 
     d.id, d.user_id, d.employee_id, d.license_number, d.phone, d.status, 
     d.assigned_bus_id, d.assigned_route_id, d.shift, d.rating, d.created_at, d.updated_at,
@@ -16,6 +16,142 @@ const DRIVER_JOIN_SQL = `
   LEFT JOIN buses b ON d.assigned_bus_id = b.id
   LEFT JOIN routes r ON d.assigned_route_id = r.id
 `;
+
+/**
+ * Robust Driver Record Resolver
+ * Supports numeric ID, employee_id (e.g. 'DRV-101'), or prefixed ID (e.g. 'drv_1')
+ */
+export const resolveDriverRecord = async (rawId) => {
+  if (rawId === undefined || rawId === null || rawId === '') return null;
+  const str = rawId.toString().trim();
+  const num = parseInt(str, 10);
+
+  // 1. Numeric ID check
+  if (!isNaN(num) && /^\d+$/.test(str)) {
+    try {
+      const [rows] = await pool.query('SELECT * FROM drivers WHERE id = ?', [num]);
+      if (rows.length > 0) return { id: rows[0].id, driver: rows[0], usedDb: true };
+    } catch (e) {}
+    const mem = inMemoryDrivers.find((d) => d.id === num);
+    if (mem) return { id: mem.id, driver: mem, usedDb: false };
+  }
+
+  // 2. Employee ID check (e.g. 'DRV-101')
+  try {
+    const [rows] = await pool.query('SELECT * FROM drivers WHERE UPPER(employee_id) = ?', [str.toUpperCase()]);
+    if (rows.length > 0) return { id: rows[0].id, driver: rows[0], usedDb: true };
+  } catch (e) {}
+  const memByEmp = inMemoryDrivers.find((d) => d.employee_id && d.employee_id.toUpperCase() === str.toUpperCase());
+  if (memByEmp) return { id: memByEmp.id, driver: memByEmp, usedDb: false };
+
+  // 3. String with digits check (e.g. 'drv_1' or 'drv_4')
+  const digitsOnly = str.replace(/\D/g, '');
+  if (digitsOnly) {
+    const parsedDigits = parseInt(digitsOnly, 10);
+    try {
+      const [rows] = await pool.query('SELECT * FROM drivers WHERE id = ?', [parsedDigits]);
+      if (rows.length > 0) return { id: rows[0].id, driver: rows[0], usedDb: true };
+    } catch (e) {}
+    const memByDigits = inMemoryDrivers.find((d) => d.id === parsedDigits);
+    if (memByDigits) return { id: memByDigits.id, driver: memByDigits, usedDb: false };
+  }
+
+  return null;
+};
+
+/**
+ * Robust Bus ID Resolver
+ * Resolves to numeric bus ID from id, bus_number, or 'bus_101'
+ */
+export const resolveBusId = async (rawBusId) => {
+  if (rawBusId === null || rawBusId === undefined || rawBusId === '' || rawBusId === 'null' || rawBusId === 'undefined') {
+    return null;
+  }
+  const str = rawBusId.toString().trim();
+  const num = parseInt(str, 10);
+
+  if (!isNaN(num) && /^\d+$/.test(str)) {
+    try {
+      const [rows] = await pool.query('SELECT id FROM buses WHERE id = ?', [num]);
+      if (rows.length > 0) return rows[0].id;
+    } catch (e) {}
+    const mem = inMemoryBuses.find((b) => b.id === num);
+    if (mem) return mem.id;
+  }
+
+  const normalizedBusNum = str.replace(/[_\s]/g, '-').toUpperCase();
+  try {
+    const [rows] = await pool.query('SELECT id FROM buses WHERE UPPER(bus_number) = ? OR UPPER(bus_number) = ?', [
+      str.toUpperCase(),
+      normalizedBusNum,
+    ]);
+    if (rows.length > 0) return rows[0].id;
+  } catch (e) {}
+  const memByNum = inMemoryBuses.find(
+    (b) => b.bus_number && (b.bus_number.toUpperCase() === str.toUpperCase() || b.bus_number.toUpperCase() === normalizedBusNum)
+  );
+  if (memByNum) return memByNum.id;
+
+  const digitsOnly = str.replace(/\D/g, '');
+  if (digitsOnly) {
+    const parsedDigits = parseInt(digitsOnly, 10);
+    try {
+      const [rows] = await pool.query('SELECT id FROM buses WHERE id = ?', [parsedDigits]);
+      if (rows.length > 0) return rows[0].id;
+    } catch (e) {}
+    const memByDigits = inMemoryBuses.find((b) => b.id === parsedDigits);
+    if (memByDigits) return memByDigits.id;
+  }
+
+  return undefined; // Not found
+};
+
+/**
+ * Robust Route ID Resolver
+ * Resolves to numeric route ID from id, route_code, or 'route_1'
+ */
+export const resolveRouteId = async (rawRouteId) => {
+  if (rawRouteId === null || rawRouteId === undefined || rawRouteId === '' || rawRouteId === 'null' || rawRouteId === 'undefined') {
+    return null;
+  }
+  const str = rawRouteId.toString().trim();
+  const num = parseInt(str, 10);
+
+  if (!isNaN(num) && /^\d+$/.test(str)) {
+    try {
+      const [rows] = await pool.query('SELECT id FROM routes WHERE id = ?', [num]);
+      if (rows.length > 0) return rows[0].id;
+    } catch (e) {}
+    const mem = inMemoryRoutes.find((r) => r.id === num);
+    if (mem) return mem.id;
+  }
+
+  const normalizedRouteCode = str.replace(/[_\s]/g, '-').toUpperCase();
+  try {
+    const [rows] = await pool.query('SELECT id FROM routes WHERE UPPER(route_code) = ? OR UPPER(route_code) = ?', [
+      str.toUpperCase(),
+      normalizedRouteCode,
+    ]);
+    if (rows.length > 0) return rows[0].id;
+  } catch (e) {}
+  const memByCode = inMemoryRoutes.find(
+    (r) => r.route_code && (r.route_code.toUpperCase() === str.toUpperCase() || r.route_code.toUpperCase() === normalizedRouteCode)
+  );
+  if (memByCode) return memByCode.id;
+
+  const digitsOnly = str.replace(/\D/g, '');
+  if (digitsOnly) {
+    const parsedDigits = parseInt(digitsOnly, 10);
+    try {
+      const [rows] = await pool.query('SELECT id FROM routes WHERE id = ?', [parsedDigits]);
+      if (rows.length > 0) return rows[0].id;
+    } catch (e) {}
+    const memByDigits = inMemoryRoutes.find((r) => r.id === parsedDigits);
+    if (memByDigits) return memByDigits.id;
+  }
+
+  return undefined; // Not found
+};
 
 /**
  * @route   GET /api/drivers
@@ -48,15 +184,16 @@ export const getAllDrivers = async (req, res, next) => {
  */
 export const getDriverById = async (req, res, next) => {
   try {
-    const driverId = parseInt(req.params.id, 10);
-    if (isNaN(driverId)) {
-      return res.status(400).json({
+    const driverRecord = await resolveDriverRecord(req.params.id);
+    if (!driverRecord) {
+      return res.status(404).json({
         success: false,
-        message: 'Invalid driver ID format.',
+        message: `Driver with ID '${req.params.id}' not found.`,
       });
     }
 
-    try {
+    const driverId = driverRecord.id;
+    if (driverRecord.usedDb) {
       const [rows] = await pool.query(`${DRIVER_JOIN_SQL} WHERE d.id = ?`, [driverId]);
       if (rows.length === 0) {
         return res.status(404).json({
@@ -68,14 +205,8 @@ export const getDriverById = async (req, res, next) => {
         success: true,
         data: rows[0],
       });
-    } catch (dbErr) {
-      const driver = inMemoryDrivers.find((d) => d.id === driverId);
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message: `Driver with ID ${driverId} not found.`,
-        });
-      }
+    } else {
+      const driver = inMemoryDrivers.find((d) => d.id === driverId) || driverRecord.driver;
       return res.status(200).json({
         success: true,
         data: driver,
@@ -289,35 +420,19 @@ export const createDriver = async (req, res, next) => {
  */
 export const updateDriver = async (req, res, next) => {
   try {
-    const driverId = parseInt(req.params.id, 10);
-    if (isNaN(driverId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid driver ID format.',
-      });
-    }
-
-    const { employee_id, license_number, phone, status, assigned_bus_id, assigned_route_id, shift, rating } = req.body;
-
-    let existingDriver = null;
-    let usedDb = false;
-
-    try {
-      const [rows] = await pool.query('SELECT * FROM drivers WHERE id = ?', [driverId]);
-      if (rows.length > 0) {
-        existingDriver = rows[0];
-        usedDb = true;
-      }
-    } catch (dbErr) {
-      existingDriver = inMemoryDrivers.find((d) => d.id === driverId) || null;
-    }
-
-    if (!existingDriver) {
+    const driverRecord = await resolveDriverRecord(req.params.id);
+    if (!driverRecord) {
       return res.status(404).json({
         success: false,
-        message: `Driver with ID ${driverId} not found.`,
+        message: `Driver with ID '${req.params.id}' not found.`,
       });
     }
+
+    const driverId = driverRecord.id;
+    let existingDriver = driverRecord.driver;
+    let usedDb = driverRecord.usedDb;
+
+    const { employee_id, license_number, phone, status, assigned_bus_id, assigned_route_id, shift, rating } = req.body;
 
     const updatedEmpId = employee_id !== undefined ? employee_id.toString().trim().toUpperCase() : existingDriver.employee_id;
     const updatedLicense = license_number !== undefined ? license_number.toString().trim().toUpperCase() : existingDriver.license_number;
@@ -425,31 +540,16 @@ export const updateDriver = async (req, res, next) => {
  */
 export const deleteDriver = async (req, res, next) => {
   try {
-    const driverId = parseInt(req.params.id, 10);
-    if (isNaN(driverId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid driver ID format.',
-      });
-    }
-
-    let driverExists = false;
-    let usedDb = false;
-
-    try {
-      const [rows] = await pool.query('SELECT id FROM drivers WHERE id = ?', [driverId]);
-      driverExists = rows.length > 0;
-      usedDb = true;
-    } catch (dbErr) {
-      driverExists = inMemoryDrivers.some((d) => d.id === driverId);
-    }
-
-    if (!driverExists) {
+    const driverRecord = await resolveDriverRecord(req.params.id);
+    if (!driverRecord) {
       return res.status(404).json({
         success: false,
-        message: `Driver with ID ${driverId} not found.`,
+        message: `Driver with ID '${req.params.id}' not found.`,
       });
     }
+
+    const driverId = driverRecord.id;
+    const usedDb = driverRecord.usedDb;
 
     if (usedDb) {
       await pool.query('DELETE FROM drivers WHERE id = ?', [driverId]);
@@ -474,54 +574,52 @@ export const deleteDriver = async (req, res, next) => {
  */
 export const updateDriverAssignment = async (req, res, next) => {
   try {
-    const driverId = parseInt(req.params.id, 10);
-    if (isNaN(driverId)) {
+    const driverRecord = await resolveDriverRecord(req.params.id);
+    if (!driverRecord) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid driver ID format.',
+        message: 'Invalid driver format. Driver not found with provided ID or Employee ID.',
       });
     }
 
-    const { assigned_bus_id, assigned_route_id } = req.body;
+    const driverId = driverRecord.id;
+    const rawBusId = req.body.assigned_bus_id !== undefined ? req.body.assigned_bus_id : (req.body.bus_id !== undefined ? req.body.bus_id : req.body.busId);
+    const rawRouteId = req.body.assigned_route_id !== undefined ? req.body.assigned_route_id : (req.body.route_id !== undefined ? req.body.route_id : req.body.routeId);
+    const shiftVal = req.body.shift !== undefined ? req.body.shift : null;
 
-    const targetBusId = assigned_bus_id !== undefined && assigned_bus_id !== null ? parseInt(assigned_bus_id, 10) : null;
-    const targetRouteId = assigned_route_id !== undefined && assigned_route_id !== null ? parseInt(assigned_route_id, 10) : null;
+    const targetBusId = await resolveBusId(rawBusId);
+    if (targetBusId === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: `Bus with ID '${rawBusId}' not found.`,
+      });
+    }
 
-    let usedDb = false;
+    const targetRouteId = await resolveRouteId(rawRouteId);
+    if (targetRouteId === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: `Route with ID '${rawRouteId}' not found.`,
+      });
+    }
 
-    try {
-      const [driverRows] = await pool.query('SELECT id FROM drivers WHERE id = ?', [driverId]);
-      if (driverRows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: `Driver with ID ${driverId} not found.`,
-        });
-      }
-
+    if (driverRecord.usedDb) {
+      // Clear targetBusId from any other driver to prevent UNIQUE key violation
       if (targetBusId !== null) {
-        const [busRows] = await pool.query('SELECT id FROM buses WHERE id = ?', [targetBusId]);
-        if (busRows.length === 0) {
-          return res.status(400).json({
-            success: false,
-            message: `Bus with ID ${targetBusId} not found.`,
-          });
-        }
+        await pool.query('UPDATE drivers SET assigned_bus_id = NULL WHERE assigned_bus_id = ? AND id != ?', [targetBusId, driverId]);
       }
 
-      if (targetRouteId !== null) {
-        const [routeRows] = await pool.query('SELECT id FROM routes WHERE id = ?', [targetRouteId]);
-        if (routeRows.length === 0) {
-          return res.status(400).json({
-            success: false,
-            message: `Route with ID ${targetRouteId} not found.`,
-          });
-        }
+      if (shiftVal) {
+        await pool.query(
+          'UPDATE drivers SET assigned_bus_id = ?, assigned_route_id = ?, shift = ? WHERE id = ?',
+          [targetBusId, targetRouteId, shiftVal, driverId]
+        );
+      } else {
+        await pool.query(
+          'UPDATE drivers SET assigned_bus_id = ?, assigned_route_id = ? WHERE id = ?',
+          [targetBusId, targetRouteId, driverId]
+        );
       }
-
-      await pool.query(
-        'UPDATE drivers SET assigned_bus_id = ?, assigned_route_id = ? WHERE id = ?',
-        [targetBusId, targetRouteId, driverId]
-      );
 
       const [updatedRows] = await pool.query(`${DRIVER_JOIN_SQL} WHERE d.id = ?`, [driverId]);
 
@@ -530,8 +628,8 @@ export const updateDriverAssignment = async (req, res, next) => {
         message: 'Driver assignment updated successfully.',
         data: updatedRows[0],
       });
-    } catch (dbErr) {
-      const driver = inMemoryDrivers.find((d) => d.id === driverId);
+    } else {
+      const driver = inMemoryDrivers.find((d) => d.id === driverId) || driverRecord.driver;
       if (!driver) {
         return res.status(404).json({
           success: false,
@@ -539,8 +637,25 @@ export const updateDriverAssignment = async (req, res, next) => {
         });
       }
 
+      if (targetBusId !== null) {
+        inMemoryDrivers.forEach((d) => {
+          if (d.assigned_bus_id === targetBusId && d.id !== driverId) {
+            d.assigned_bus_id = null;
+            d.assigned_route_id = null;
+            d.bus_number = 'Unassigned';
+          }
+        });
+      }
+
       driver.assigned_bus_id = targetBusId;
       driver.assigned_route_id = targetRouteId;
+      if (shiftVal) driver.shift = shiftVal;
+
+      const matchedBus = targetBusId !== null ? inMemoryBuses.find((b) => b.id === targetBusId) : null;
+      const matchedRoute = targetRouteId !== null ? inMemoryRoutes.find((r) => r.id === targetRouteId) : null;
+      driver.bus_number = matchedBus ? matchedBus.bus_number : 'Unassigned';
+      driver.route_code = matchedRoute ? matchedRoute.route_code : null;
+      driver.route_name = matchedRoute ? matchedRoute.name : 'None';
 
       return res.status(200).json({
         success: true,

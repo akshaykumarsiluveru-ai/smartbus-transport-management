@@ -11,11 +11,32 @@ let ioInstance = null;
  * @returns {import('socket.io').Server}
  */
 export const initSocketServer = (httpServer, options = {}) => {
-  const allowedOrigin = process.env.SOCKET_ORIGIN || process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+  const configuredOrigins = [
+    process.env.SOCKET_ORIGIN,
+    process.env.FRONTEND_ORIGIN,
+    process.env.CORS_ORIGIN,
+    'https://smartbus-transport-management.vercel.app',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://localhost:5000',
+  ].filter(Boolean);
 
   const io = new Server(httpServer, {
     cors: {
-      origin: [allowedOrigin, 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
+      origin: (origin, callback) => {
+        // Allow mobile apps, curl, or requests with no origin header
+        if (!origin) return callback(null, true);
+        if (
+          configuredOrigins.includes(origin) ||
+          origin.endsWith('.vercel.app') ||
+          origin.includes('localhost') ||
+          origin.includes('127.0.0.1')
+        ) {
+          return callback(null, true);
+        }
+        return callback(null, true);
+      },
       methods: ['GET', 'POST'],
       credentials: true,
     },

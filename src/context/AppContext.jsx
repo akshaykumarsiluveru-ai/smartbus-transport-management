@@ -49,57 +49,104 @@ const loadInitial = (key, fallback) => {
 };
 
 // Data model mappers for Express/MySQL backend APIs
-const mapBusFromDb = (b) => ({
-  id: b.id,
-  BusID: b.id,
-  busNumber: b.bus_number,
-  BusNo: b.bus_number,
-  registrationNumber: b.registration_number,
-  model: b.model || 'Standard Transit Bus',
-  capacity: b.capacity || 50,
-  Capacity: b.capacity || 50,
-  currentOccupancy: b.current_occupancy || 0,
-  fuelType: b.fuel_type || 'Diesel',
-  status: b.status || 'At Depot',
-  currentLat: b.current_lat !== undefined && b.current_lat !== null ? parseFloat(b.current_lat) : 24.5714,
-  Latitude: b.current_lat !== undefined && b.current_lat !== null ? parseFloat(b.current_lat) : 24.5714,
-  currentLng: b.current_lng !== undefined && b.current_lng !== null ? parseFloat(b.current_lng) : 73.6974,
-  Longitude: b.current_lng !== undefined && b.current_lng !== null ? parseFloat(b.current_lng) : 73.6974,
-  speed: b.speed !== undefined && b.speed !== null ? parseFloat(b.speed) : 0,
-  isLive: Boolean(b.is_live),
-  driverId: b.assigned_driver_id || '',
-  driverName: b.driver_name || 'Unassigned',
-  routeId: b.assigned_route_id || '',
-  routeName: b.route_name || 'Unassigned',
-  currentStop: b.current_stop || 'Depot Yard',
-  nextStop: b.next_stop || 'None',
-  etaMinutes: b.eta_minutes || 0,
-  eta: b.eta_minutes || 0,
-  lastUpdated: b.updated_at || new Date().toISOString(),
-  timestamp: b.updated_at || new Date().toISOString(),
-});
+const mapBusFromDb = (b, allDriversRaw = [], allRoutesRaw = []) => {
+  let driverId = b.assigned_driver_id || b.driverId || b.driver_id || '';
+  let driverName = b.driver_name && b.driver_name !== 'Unassigned' ? b.driver_name : (b.driverName && b.driverName !== 'Unassigned' ? b.driverName : '');
+  let routeId = b.assigned_route_id || b.routeId || b.route_id || '';
+  let routeName = b.route_name && b.route_name !== 'Unassigned' ? b.route_name : (b.routeName && b.routeName !== 'Unassigned' ? b.routeName : '');
+  let shift = b.shift || 'Morning';
 
-const mapDriverFromDb = (d) => ({
-  id: d.id,
-  DriverID: d.id,
-  driverId: d.id,
-  userId: d.user_id,
-  name: d.driver_name || d.name || 'Unnamed Driver',
-  Name: d.driver_name || d.name || 'Unnamed Driver',
-  email: d.driver_email || d.email || '',
-  phone: d.phone || '',
-  Contact: d.phone || '',
-  employeeId: d.employee_id,
-  licenseNumber: d.license_number,
-  status: d.status || 'Available',
-  assignedBusId: d.assigned_bus_id || '',
-  assignedBusNumber: d.bus_number || 'Unassigned',
-  assignedRouteId: d.assigned_route_id || '',
-  assignedRouteName: d.route_name || 'None',
-  shift: d.shift || 'Morning',
-  rating: d.rating ? `${d.rating} ⭐` : '5.0 ⭐',
-  tripsToday: d.trips_today || 0,
-});
+  // If driver info was not directly in the bus row, cross-reference with raw drivers
+  if (!driverId && allDriversRaw.length > 0) {
+    const matchedDriver = allDriversRaw.find(
+      (d) => (d.assigned_bus_id && (d.assigned_bus_id === b.id || d.assigned_bus_id === parseInt(b.id, 10))) ||
+             (d.assignedBusId && (d.assignedBusId === b.id || d.assignedBusId === parseInt(b.id, 10)))
+    );
+    if (matchedDriver) {
+      driverId = matchedDriver.id || matchedDriver.DriverID || matchedDriver.driverId || '';
+      driverName = matchedDriver.driver_name || matchedDriver.name || matchedDriver.Name || 'Assigned Driver';
+      routeId = routeId || matchedDriver.assigned_route_id || matchedDriver.assignedRouteId || '';
+      routeName = routeName || matchedDriver.route_name || matchedDriver.assignedRouteName || '';
+      shift = matchedDriver.shift || shift;
+    }
+  }
+
+  // If route name is missing but routeId exists, cross-reference with raw routes
+  if (routeId && (!routeName || routeName === 'Unassigned') && allRoutesRaw.length > 0) {
+    const matchedRoute = allRoutesRaw.find((r) => r.id === routeId || r.id === parseInt(routeId, 10) || r.route_code === routeId);
+    if (matchedRoute) {
+      routeName = matchedRoute.name || matchedRoute.routeName || matchedRoute.RouteName || '';
+    }
+  }
+
+  return {
+    id: b.id,
+    BusID: b.id,
+    busNumber: b.bus_number || b.busNumber || b.BusNo,
+    BusNo: b.bus_number || b.busNumber || b.BusNo,
+    registrationNumber: b.registration_number || b.registrationNumber,
+    model: b.model || 'Standard Transit Bus',
+    capacity: b.capacity || b.Capacity || 50,
+    Capacity: b.capacity || b.Capacity || 50,
+    currentOccupancy: b.current_occupancy !== undefined ? b.current_occupancy : (b.currentOccupancy || 0),
+    fuelType: b.fuel_type || b.fuelType || 'Diesel',
+    status: b.status || 'At Depot',
+    currentLat: b.current_lat !== undefined && b.current_lat !== null ? parseFloat(b.current_lat) : (b.currentLat !== undefined ? b.currentLat : 24.5714),
+    Latitude: b.current_lat !== undefined && b.current_lat !== null ? parseFloat(b.current_lat) : (b.currentLat !== undefined ? b.currentLat : 24.5714),
+    currentLng: b.current_lng !== undefined && b.current_lng !== null ? parseFloat(b.current_lng) : (b.currentLng !== undefined ? b.currentLng : 73.6974),
+    Longitude: b.current_lng !== undefined && b.current_lng !== null ? parseFloat(b.current_lng) : (b.currentLng !== undefined ? b.currentLng : 73.6974),
+    speed: b.speed !== undefined && b.speed !== null ? parseFloat(b.speed) : 0,
+    isLive: Boolean(b.is_live !== undefined ? b.is_live : b.isLive),
+    driverId: driverId || '',
+    driverName: driverName || 'Unassigned',
+    routeId: routeId || '',
+    routeName: routeName || 'Unassigned',
+    shift: shift || 'Morning',
+    currentStop: b.current_stop || b.currentStop || 'Depot Yard',
+    nextStop: b.next_stop || b.nextStop || 'None',
+    etaMinutes: b.eta_minutes || b.etaMinutes || 0,
+    eta: b.eta_minutes || b.etaMinutes || 0,
+    lastUpdated: b.updated_at || b.lastUpdated || new Date().toISOString(),
+    timestamp: b.updated_at || b.timestamp || new Date().toISOString(),
+  };
+};
+
+const mapDriverFromDb = (d, allBusesRaw = [], allRoutesRaw = []) => {
+  let assignedBusNumber = d.bus_number || d.assignedBusNumber || '';
+  let assignedBusId = d.assigned_bus_id || d.assignedBusId || '';
+  if ((!assignedBusNumber || assignedBusNumber === 'Unassigned') && assignedBusId && allBusesRaw.length > 0) {
+    const matchedBus = allBusesRaw.find((b) => b.id === assignedBusId || b.id === parseInt(assignedBusId, 10));
+    if (matchedBus) assignedBusNumber = matchedBus.bus_number || matchedBus.busNumber;
+  }
+  let assignedRouteName = d.route_name || d.assignedRouteName || '';
+  let assignedRouteId = d.assigned_route_id || d.assignedRouteId || '';
+  if ((!assignedRouteName || assignedRouteName === 'None') && assignedRouteId && allRoutesRaw.length > 0) {
+    const matchedRoute = allRoutesRaw.find((r) => r.id === assignedRouteId || r.id === parseInt(assignedRouteId, 10));
+    if (matchedRoute) assignedRouteName = matchedRoute.name || matchedRoute.routeName;
+  }
+
+  return {
+    id: d.id,
+    DriverID: d.id,
+    driverId: d.id,
+    userId: d.user_id,
+    name: d.driver_name || d.name || 'Unnamed Driver',
+    Name: d.driver_name || d.name || 'Unnamed Driver',
+    email: d.driver_email || d.email || '',
+    phone: d.phone || d.Contact || '',
+    Contact: d.phone || d.Contact || '',
+    employeeId: d.employee_id || d.employeeId,
+    licenseNumber: d.license_number || d.licenseNumber,
+    status: d.status || 'Available',
+    assignedBusId: assignedBusId || '',
+    assignedBusNumber: assignedBusNumber || 'Unassigned',
+    assignedRouteId: assignedRouteId || '',
+    assignedRouteName: assignedRouteName || 'None',
+    shift: d.shift || 'Morning',
+    rating: d.rating ? `${d.rating} ⭐` : '5.0 ⭐',
+    tripsToday: d.trips_today || d.tripsToday || 0,
+  };
+};
 
 const mapStopFromDb = (s) => ({
   id: s.id,
@@ -259,11 +306,15 @@ export const AppProvider = ({ children }) => {
         trackingApi.getLiveTracking().catch((e) => ({ success: false, error: e })),
       ]);
 
-      if (busesRes.success && Array.isArray(busesRes.data)) {
-        setBuses(busesRes.data.map(mapBusFromDb));
+      const rawBuses = busesRes.success && Array.isArray(busesRes.data) ? busesRes.data : [];
+      const rawDrivers = driversRes.success && Array.isArray(driversRes.data) ? driversRes.data : [];
+      const rawRoutes = routesRes.success && Array.isArray(routesRes.data) ? routesRes.data : [];
+
+      if (rawBuses.length > 0) {
+        setBuses(rawBuses.map((b) => mapBusFromDb(b, rawDrivers, rawRoutes)));
       }
-      if (driversRes.success && Array.isArray(driversRes.data)) {
-        setDrivers(driversRes.data.map(mapDriverFromDb));
+      if (rawDrivers.length > 0) {
+        setDrivers(rawDrivers.map((d) => mapDriverFromDb(d, rawBuses, rawRoutes)));
       }
       if (noticesRes.success && Array.isArray(noticesRes.data)) {
         setNotices(noticesRes.data.map(mapNoticeFromDb));
@@ -1366,41 +1417,65 @@ export const AppProvider = ({ children }) => {
    */
   const assignDriverToBus = useCallback(async (busId, driverId, routeId, shift = 'Morning') => {
     try {
+      const dId = typeof driverId === 'object' && driverId !== null ? (driverId.id || driverId.DriverID || driverId.driverId) : driverId;
+      const bId = typeof busId === 'object' && busId !== null ? (busId.id || busId.BusID || busId.busId) : busId;
+      const rId = typeof routeId === 'object' && routeId !== null ? (routeId.id || routeId.RouteID || routeId.routeId) : routeId;
+
+      const driver = drivers.find((d) => d.id === dId || d.DriverID === dId || d.driverId === dId || d.employeeId === dId || (typeof dId === 'string' && d.id === parseInt(dId, 10)));
+      const bus = buses.find((b) => b.id === bId || b.BusID === bId || b.busNumber === bId || (typeof bId === 'string' && b.id === parseInt(bId, 10)));
+      const route = routes.find((r) => r.id === rId || r.RouteID === rId || r.routeId === rId || r.routeCode === rId || (typeof rId === 'string' && r.id === parseInt(rId, 10)));
+
+      const cleanDriverId = driver ? driver.id : dId;
+      if (cleanDriverId === undefined || cleanDriverId === null || cleanDriverId === '') {
+        return { success: false, error: 'Driver selection is required for assignment.' };
+      }
+
+      const cleanBusId = bus ? bus.id : (bId !== undefined && bId !== null && bId !== '' ? (parseInt(bId, 10) || bId) : null);
+      const cleanRouteId = route ? route.id : (rId !== undefined && rId !== null && rId !== '' ? (parseInt(rId, 10) || rId) : null);
+
       const payload = {
-        assigned_bus_id: busId ? parseInt(busId) : null,
-        assigned_route_id: routeId ? parseInt(routeId) : null,
-        shift: shift || 'Morning',
+        assigned_bus_id: cleanBusId,
+        assigned_route_id: cleanRouteId,
+        shift: shift || (bus?.shift || driver?.shift || 'Morning'),
       };
-      const res = await driverApi.assignDriver(driverId, payload);
+
+      const res = await driverApi.assignDriver(cleanDriverId, payload);
       await refreshAdminData();
-      logActivity('Assignment Created', `Assigned bus ${busId} ➔ driver ${driverId}`, 'Assignment');
-      return { success: true, data: res.data };
+      logActivity('Assignment Created', `Assigned bus ${bus?.busNumber || busId} ➔ driver ${driver?.name || driverId}`, 'Assignment');
+      return { success: true, data: res?.data };
     } catch (err) {
       console.error('Error assigning driver:', err);
       return { success: false, error: err.message || 'Failed to assign driver.' };
     }
-  }, [refreshAdminData, logActivity]);
+  }, [drivers, buses, routes, refreshAdminData, logActivity]);
 
   const changeAssignedDriver = useCallback(async (busId, newDriverId) => {
     try {
-      const bus = buses.find((b) => b.id === busId || b.BusID === busId || b.id === parseInt(busId));
-      const newDriver = drivers.find((d) => d.id === newDriverId || d.DriverID === newDriverId || d.id === parseInt(newDriverId));
+      const bId = typeof busId === 'object' && busId !== null ? (busId.id || busId.BusID || busId.busId) : busId;
+      const dId = typeof newDriverId === 'object' && newDriverId !== null ? (newDriverId.id || newDriverId.DriverID || newDriverId.driverId) : newDriverId;
+
+      const bus = buses.find((b) => b.id === bId || b.BusID === bId || b.id === parseInt(bId, 10));
+      const newDriver = drivers.find((d) => d.id === dId || d.DriverID === dId || d.driverId === dId || d.employeeId === dId || (typeof dId === 'string' && d.id === parseInt(dId, 10)));
 
       if (!bus || !newDriver) return { success: false, error: 'Bus or Driver not found.' };
 
-      const oldDriverId = bus.driverId;
-      if (oldDriverId && oldDriverId !== newDriver.id) {
-        await driverApi.assignDriver(oldDriverId, { assigned_bus_id: null, assigned_route_id: null });
+      // Find old driver assigned to this bus
+      const oldDriver = drivers.find((d) => (bus.driverId && (d.id === bus.driverId || d.DriverID === bus.driverId)) || d.assignedBusId === bus.id);
+      if (oldDriver && oldDriver.id !== newDriver.id) {
+        await driverApi.assignDriver(oldDriver.id, { assigned_bus_id: null, assigned_route_id: null });
       }
 
+      const cleanBusId = parseInt(bus.id, 10) || bus.id;
+      const cleanRouteId = bus.routeId ? (parseInt(bus.routeId, 10) || bus.routeId) : (newDriver.assignedRouteId ? parseInt(newDriver.assignedRouteId, 10) : null);
+
       const res = await driverApi.assignDriver(newDriver.id, {
-        assigned_bus_id: parseInt(bus.id),
-        assigned_route_id: bus.routeId ? parseInt(bus.routeId) : null,
-        shift: bus.shift || 'Morning',
+        assigned_bus_id: cleanBusId,
+        assigned_route_id: cleanRouteId,
+        shift: bus.shift || newDriver.shift || 'Morning',
       });
       await refreshAdminData();
       logActivity('Driver Changed', `Changed driver on ${bus.busNumber || bus.BusNo} to ${newDriver.name || newDriver.Name}`, 'Assignment');
-      return { success: true, data: res.data };
+      return { success: true, data: res?.data };
     } catch (err) {
       console.error('Error changing assigned driver:', err);
       return { success: false, error: err.message || 'Failed to change assigned driver.' };
@@ -1409,16 +1484,27 @@ export const AppProvider = ({ children }) => {
 
   const changeAssignedRoute = useCallback(async (busId, newRouteId) => {
     try {
-      const bus = buses.find((b) => b.id === busId || b.BusID === busId || b.id === parseInt(busId));
-      const route = routes.find((r) => r.id === newRouteId || r.RouteID === newRouteId || r.id === parseInt(newRouteId));
+      const bId = typeof busId === 'object' && busId !== null ? (busId.id || busId.BusID || busId.busId) : busId;
+      const rId = typeof newRouteId === 'object' && newRouteId !== null ? (newRouteId.id || newRouteId.RouteID || newRouteId.routeId) : newRouteId;
+
+      const bus = buses.find((b) => b.id === bId || b.BusID === bId || b.id === parseInt(bId, 10));
+      const route = routes.find((r) => r.id === rId || r.RouteID === rId || r.id === parseInt(rId, 10));
 
       if (!bus || !route) return { success: false, error: 'Bus or Route not found.' };
 
-      if (bus.driverId) {
-        await driverApi.assignDriver(bus.driverId, {
-          assigned_bus_id: parseInt(bus.id),
-          assigned_route_id: parseInt(route.id),
-          shift: bus.shift || 'Morning',
+      // Find driver assigned to this bus either from bus.driverId or drivers array
+      const assignedDriver = drivers.find(
+        (d) => (bus.driverId && (d.id === bus.driverId || d.DriverID === bus.driverId || d.id === parseInt(bus.driverId, 10))) ||
+               d.assignedBusId === bus.id || d.assignedBusId === parseInt(bus.id, 10)
+      );
+
+      if (assignedDriver) {
+        const cleanBusId = parseInt(bus.id, 10) || bus.id;
+        const cleanRouteId = parseInt(route.id, 10) || route.id;
+        await driverApi.assignDriver(assignedDriver.id, {
+          assigned_bus_id: cleanBusId,
+          assigned_route_id: cleanRouteId,
+          shift: assignedDriver.shift || bus.shift || 'Morning',
         });
       }
       await refreshAdminData();
@@ -1428,11 +1514,12 @@ export const AppProvider = ({ children }) => {
       console.error('Error changing assigned route:', err);
       return { success: false, error: err.message || 'Failed to change assigned route.' };
     }
-  }, [buses, routes, refreshAdminData, logActivity]);
+  }, [buses, routes, drivers, refreshAdminData, logActivity]);
 
   const unassignDriver = useCallback(async (driverId) => {
     try {
-      const driver = drivers.find((d) => d.id === driverId || d.DriverID === driverId || d.id === parseInt(driverId));
+      const dId = typeof driverId === 'object' && driverId !== null ? (driverId.id || driverId.DriverID || driverId.driverId) : driverId;
+      const driver = drivers.find((d) => d.id === dId || d.DriverID === dId || d.id === parseInt(dId, 10) || d.employeeId === dId);
       if (!driver) return { success: false, error: 'Driver not found.' };
 
       const res = await driverApi.assignDriver(driver.id, {
@@ -1441,7 +1528,7 @@ export const AppProvider = ({ children }) => {
       });
       await refreshAdminData();
       logActivity('Driver Unassigned', `Unassigned driver ${driver.name || driver.Name}`, 'Assignment');
-      return { success: true, data: res.data };
+      return { success: true, data: res?.data };
     } catch (err) {
       console.error('Error unassigning driver:', err);
       return { success: false, error: err.message || 'Failed to unassign driver.' };
@@ -1450,19 +1537,27 @@ export const AppProvider = ({ children }) => {
 
   const assignRouteToDriver = useCallback(async (driverId, routeId) => {
     try {
-      const driver = drivers.find((d) => d.id === driverId || d.DriverID === driverId || d.id === parseInt(driverId));
-      const route = routes.find((r) => r.id === routeId || r.RouteID === routeId || r.id === parseInt(routeId));
+      const dId = typeof driverId === 'object' && driverId !== null ? (driverId.id || driverId.DriverID || driverId.driverId) : driverId;
+      const rId = typeof routeId === 'object' && routeId !== null ? (routeId.id || routeId.RouteID || routeId.routeId) : routeId;
 
-      if (!driver || !route) return { success: false, error: 'Driver or Route not found.' };
+      const driver = drivers.find((d) => d.id === dId || d.DriverID === dId || d.id === parseInt(dId, 10) || d.employeeId === dId);
+      const route = routes.find((r) => r.id === rId || r.RouteID === rId || r.id === parseInt(rId, 10) || r.routeCode === rId);
 
-      const res = await driverApi.assignDriver(driver.id, {
-        assigned_bus_id: driver.assignedBusId ? parseInt(driver.assignedBusId) : null,
-        assigned_route_id: parseInt(route.id),
+      if (!driver) return { success: false, error: 'Driver not found.' };
+      if (!route) return { success: false, error: 'Route not found.' };
+
+      const cleanDriverId = driver.id || dId;
+      const cleanBusId = driver.assignedBusId ? (parseInt(driver.assignedBusId, 10) || driver.assignedBusId) : null;
+      const cleanRouteId = route.id ? (parseInt(route.id, 10) || route.id) : null;
+
+      const res = await driverApi.assignDriver(cleanDriverId, {
+        assigned_bus_id: cleanBusId,
+        assigned_route_id: cleanRouteId,
         shift: driver.shift || 'Morning',
       });
       await refreshAdminData();
       logActivity('Route Assigned to Driver', `Assigned ${driver.name || driver.Name} to ${route.routeName}`, 'Assignment');
-      return { success: true, data: res.data };
+      return { success: true, data: res?.data };
     } catch (err) {
       console.error('Error assigning route to driver:', err);
       return { success: false, error: err.message || 'Failed to assign route to driver.' };
@@ -1471,9 +1566,17 @@ export const AppProvider = ({ children }) => {
 
   const unassignBus = useCallback(async (busId) => {
     try {
-      const bus = buses.find((b) => b.id === busId || b.BusID === busId || b.id === parseInt(busId));
-      if (bus && bus.driverId) {
-        await driverApi.assignDriver(bus.driverId, {
+      const bId = typeof busId === 'object' && busId !== null ? (busId.id || busId.BusID || busId.busId) : busId;
+      const bus = buses.find((b) => b.id === bId || b.BusID === bId || b.id === parseInt(bId, 10));
+      const busIdVal = bus ? bus.id : (parseInt(bId, 10) || bId);
+
+      const assignedDriver = drivers.find(
+        (d) => (bus && bus.driverId && (d.id === bus.driverId || d.DriverID === bus.driverId)) ||
+               d.assignedBusId === busIdVal || d.assignedBusId === parseInt(busIdVal, 10)
+      );
+
+      if (assignedDriver) {
+        await driverApi.assignDriver(assignedDriver.id, {
           assigned_bus_id: null,
           assigned_route_id: null,
         });
@@ -1485,7 +1588,7 @@ export const AppProvider = ({ children }) => {
       console.error('Error unassigning bus:', err);
       return { success: false, error: err.message || 'Failed to unassign bus.' };
     }
-  }, [buses, refreshAdminData, logActivity]);
+  }, [buses, drivers, refreshAdminData, logActivity]);
 
   /**
    * 7. ROUTE CRUD (Shared Context)

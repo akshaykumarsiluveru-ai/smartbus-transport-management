@@ -21,7 +21,11 @@ export const updateDriver = async (id, data) => {
 };
 
 export const assignDriver = async (id, data) => {
-  return await put(`/drivers/${id}/assignment`, data);
+  const resolvedId = typeof id === 'object' && id !== null ? (id.id || id.DriverID || id.driverId) : id;
+  if (resolvedId === undefined || resolvedId === null || resolvedId === '') {
+    throw new Error('Driver ID is required for assignment.');
+  }
+  return await put(`/drivers/${encodeURIComponent(resolvedId)}/assignment`, data);
 };
 
 export const deleteDriver = async (id) => {

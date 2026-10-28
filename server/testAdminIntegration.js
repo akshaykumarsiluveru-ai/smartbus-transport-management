@@ -302,6 +302,15 @@ async function runAdminIntegrationTests() {
         logResult('Test 9: Admin can delete a driver', false, `Status ${res.status}: ${data.message}`);
         failedCount++;
       }
+
+      // Restore default Driver 1 assignment to maintain test state isolation
+      try {
+        await fetch(`${API_BASE_URL}/drivers/1/assignment`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+          body: JSON.stringify({ assigned_bus_id: 1, assigned_route_id: 1, shift: 'Morning' }),
+        });
+      } catch (restoreErr) {}
     } catch (e) {
       logResult('Test 9: Admin can delete a driver', false, e.message);
       failedCount++;

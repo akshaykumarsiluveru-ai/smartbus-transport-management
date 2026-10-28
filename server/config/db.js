@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 dotenv.config({ path: './server/.env' });
 
-const pool = mysql.createPool({
+const poolConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT, 10) || 3306,
   user: process.env.DB_USER || 'root',
@@ -13,7 +13,21 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-});
+};
+
+// Enable SSL/TLS for TiDB Cloud or whenever DB_SSL is enabled
+if (
+  process.env.DB_SSL === 'true' ||
+  (process.env.DB_HOST && process.env.DB_HOST.includes('tidbcloud')) ||
+  parseInt(process.env.DB_PORT, 10) === 4000
+) {
+  poolConfig.ssl = {
+    minVersion: 'TLSv1.2',
+    rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false',
+  };
+}
+
+const pool = mysql.createPool(poolConfig);
 
 export const testDbConnection = async () => {
   try {

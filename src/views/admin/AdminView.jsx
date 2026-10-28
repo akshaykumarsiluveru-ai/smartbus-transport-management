@@ -685,11 +685,12 @@ const AdminView = () => {
   const handleOpenEditAssignment = (bus) => {
     setSelectedAssignmentBus(bus);
     setAssignmentError('');
+    const matchedDriver = drivers.find((d) => (bus.driverId && (d.id === bus.driverId || d.DriverID === bus.driverId)) || d.assignedBusId === (bus.id || bus.BusID));
     setAssignForm({
       busId: bus.id || bus.BusID,
-      driverId: bus.driverId || '',
-      routeId: bus.routeId || '',
-      shift: bus.shift || 'Morning'
+      driverId: matchedDriver ? (matchedDriver.id || matchedDriver.DriverID) : (bus.driverId || ''),
+      routeId: bus.routeId || (matchedDriver ? matchedDriver.assignedRouteId : '') || '',
+      shift: bus.shift || (matchedDriver ? matchedDriver.shift : 'Morning')
     });
     setEditAssignModalOpen(true);
   };
@@ -3791,102 +3792,6 @@ const AdminView = () => {
             </div>
           </div>
         )}
-      </Modal>
-
-      {/* ASSIGN DRIVER TO BUS MODAL */}
-      <Modal isOpen={assignModalOpen} onClose={() => setAssignModalOpen(false)} title="Assign Driver, Bus & Route">
-        <form onSubmit={handleExecuteAssignment} className="space-y-4 text-xs">
-          {assignmentError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 font-bold rounded-xl flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>{assignmentError}</span>
-            </div>
-          )}
-
-          <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-1 text-slate-700">
-            <span className="font-bold text-blue-700 text-xs block">📋 Assignment Compliance Rules:</span>
-            <ul className="list-disc list-inside text-[11px] space-y-0.5 text-slate-600">
-              <li>Drivers already on an active trip cannot be allocated to another bus.</li>
-              <li>Buses actively in transit with a driver cannot be double-booked.</li>
-              <li>Vehicles in Maintenance bay cannot be assigned to transit trips.</li>
-            </ul>
-          </div>
-
-          <div>
-            <label className="font-bold text-slate-700 block mb-1">1. Select Fleet Driver *</label>
-            <select
-              required
-              value={assignForm.driverId}
-              onChange={(e) => setAssignForm({ ...assignForm, driverId: e.target.value })}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="">-- Choose Driver --</option>
-              {drivers.map((d) => (
-                <option key={d.id || d.DriverID} value={d.id || d.DriverID}>
-                  👨‍✈️ {d.name || d.Name} ({d.driverId || d.DriverID}) - {d.status} {d.assignedBusNumber && d.assignedBusNumber !== 'Unassigned' ? `[Assigned: ${d.assignedBusNumber}]` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="font-bold text-slate-700 block mb-1">2. Select Fleet Bus *</label>
-            <select
-              required
-              value={assignForm.busId}
-              onChange={(e) => setAssignForm({ ...assignForm, busId: e.target.value })}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="">-- Choose Bus --</option>
-              {allBuses.map((b) => (
-                <option
-                  key={b.id || b.BusID}
-                  value={b.id || b.BusID}
-                  disabled={b.status === 'Maintenance' || b.status === 'Out of Service'}
-                >
-                  🚌 {b.busNumber || b.BusNo} ({b.registrationNumber}) - {b.status} {b.status === 'Maintenance' ? '[⚠️ In Maintenance]' : ''} {b.driverName && b.driverName !== 'Unassigned' ? `(Current Driver: ${b.driverName})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="font-bold text-slate-700 block mb-1">3. Select Transit Route *</label>
-            <select
-              required
-              value={assignForm.routeId}
-              onChange={(e) => setAssignForm({ ...assignForm, routeId: e.target.value })}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="">-- Choose Route --</option>
-              {routes.map((r) => (
-                <option key={r.id || r.RouteID} value={r.id || r.RouteID}>
-                  🛣️ {r.routeName} ({r.distance || r.totalDistance || '8 km'})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="font-bold text-slate-700 block mb-1">4. Operating Shift</label>
-            <select
-              value={assignForm.shift}
-              onChange={(e) => setAssignForm({ ...assignForm, shift: e.target.value })}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="Morning">Morning Shift (07:00 AM - 03:00 PM)</option>
-              <option value="Evening">Evening Shift (03:00 PM - 11:00 PM)</option>
-              <option value="Full Day">Full Day Transit</option>
-            </select>
-          </div>
-
-          <button
-            type="submit"
-            className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-lg transition-all active:scale-98 mt-2"
-          >
-            Confirm & Dispatch Assignment
-          </button>
-        </form>
       </Modal>
 
       {/* ADD DRIVER MODAL */}

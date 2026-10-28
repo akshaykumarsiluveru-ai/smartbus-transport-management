@@ -83,8 +83,25 @@ async function runDriverIntegrationTests() {
       const currentDriver = driversList.find((d) => d.driver_email === 'driver@smartbus.edu' || d.user_id === 2 || d.id === 1) || driversList[0];
       
       driverId = currentDriver?.id || 1;
-      assignedBusId = currentDriver?.assigned_bus_id || 1;
-      assignedRouteId = currentDriver?.assigned_route_id || 1;
+      assignedBusId = currentDriver?.assigned_bus_id;
+      assignedRouteId = currentDriver?.assigned_route_id;
+
+      if (!assignedBusId && adminToken) {
+        await fetch(`${API_BASE_URL}/drivers/${driverId}/assignment`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({
+            assigned_bus_id: 1,
+            assigned_route_id: 1,
+            shift: 'Morning',
+          }),
+        });
+        assignedBusId = 1;
+        assignedRouteId = 1;
+      }
 
       const pass = driversRes.status === 200 && Boolean(driverId) && Boolean(assignedBusId);
       logResult('Test 2: Driver can fetch assigned bus & route profile', pass, `Driver ID: ${driverId}, Bus ID: ${assignedBusId}, Route ID: ${assignedRouteId}`);
